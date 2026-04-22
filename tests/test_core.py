@@ -1,6 +1,8 @@
 from polymarket_weather_bot.parser import parse_market_question, range_probability, one_tailed_probability
-from polymarket_weather_bot.models import Market
+from polymarket_weather_bot.models import Market, Signal, Trade
 from polymarket_weather_bot.strategy import WeatherStrategy
+from polymarket_weather_bot.store import Store
+from polymarket_weather_bot.dashboard import DashboardState
 
 
 def test_parse_temperature_range_city():
@@ -48,3 +50,14 @@ def test_strategy_builds_signal_for_weather_market(monkeypatch):
     signal = res['signal']
     assert signal.market_id == '1'
     assert signal.action in ('BUY_YES', 'BUY_NO', 'HOLD')
+
+
+def test_dashboard_state_and_controls(tmp_path):
+    store = Store(str(tmp_path / 'bot.db'))
+    store.set_control('paused', True)
+    store.set_control('force_scan', False)
+    state = DashboardState(store).current_state()
+    assert state['health']['paused'] is True
+    assert state['controls']['paused'] is True
+    assert state['alerts']['enabled'] in (True, False)
+    assert 'freshness_seconds' in state

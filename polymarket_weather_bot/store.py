@@ -69,6 +69,11 @@ class Store:
                     payload TEXT,
                     created_at TEXT
                 );
+                CREATE TABLE IF NOT EXISTS controls (
+                    key TEXT PRIMARY KEY,
+                    value TEXT,
+                    updated_at TEXT
+                );
                 """
             )
 
@@ -145,6 +150,40 @@ class Store:
                 (json.dumps(payload, ensure_ascii=False), datetime.now(timezone.utc).isoformat()),
             )
 
+    def set_control(self, key: str, value: Any):
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO controls (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value=excluded.value,
+                    updated_at=excluded.updated_at
+                """,
+                (key, json.dumps(value, ensure_ascii=False), datetime.now(timezone.utc).isoformat()),
+            )
+
+    def get_control(self, key: str, default: Any = None) -> Any:
+        with self._connect() as conn:
+            row = conn.execute("SELECT value FROM controls WHERE key = ?", (key,)).fetchone()
+            if not row:
+                return default
+            try:
+                return json.loads(row[0])
+            except Exception:
+                return row[0]
+
+    def get_controls(self) -> Dict[str, Any]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT key, value FROM controls ORDER BY key ASC").fetchall()
+            data: Dict[str, Any] = {}
+            for row in rows:
+                try:
+                    data[row[0]] = json.loads(row[1])
+                except Exception:
+                    data[row[0]] = row[1]
+            return data
+
     def get_positions(self) -> List[Dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute("SELECT payload FROM positions ORDER BY updated_at DESC").fetchall()
@@ -174,3 +213,36 @@ class Store:
         with self._connect() as conn:
             row = conn.execute("SELECT payload FROM errors ORDER BY id DESC LIMIT 1").fetchone()
             return json.loads(row[0]) if row else None
+
+    def get_errors(self, limit: int = 100) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT id, payload, created_at FROM errors ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            items: List[Dict[str, Any]] = []
+            for row in rows:
+                payload = json.loads(row[1])
+                if isinstance(payload, dict):
+                    payload = {**payload}
+                else:
+                    payload = {"value": payload}
+                payload.setdefault("created_at", row[2])
+                payload.setdefault("id", row[0])
+                items.append(payload)
+            return items
+
+    def get_snapshots(self, limit: int = 100) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT id, payload, created_at FROM snapshots ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            items: List[Dict[str, Any]] = []
+            for row in rows:
+                try:
+                    payload = json.loads(row[1])
+                except Exception:
+                    payload = {"raw": row[1]}
+                if isinstance(payload, dict):
+                    record = {**payload}
+                else:
+                    record = {"value": payload}
+                record.setdefault("created_at", row[2])
+                record.setdefault("id", row[0])
+                items.append(record)
+            return items

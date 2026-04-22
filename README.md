@@ -58,12 +58,23 @@ The backend on the VPS stays responsible for the bot loop and `/api/state`.
 - `BOT_DB_PATH` — SQLite file path (default: `./bot.db`)
 - `BOT_PORT` — dashboard port (default: `8080`)
 - `BOT_POLL_SECONDS` — scan interval (default: `300`)
+- `BOT_CONTROL_POLL_SECONDS` — idle/pause control loop interval (default: `20`)
 - `BOT_MIN_VOLUME` — minimum market volume (default: `5000`)
 - `BOT_MAX_SPREAD` — maximum spread to consider (default: `0.08`)
 - `BOT_EDGE_THRESHOLD` — minimum edge to enter (default: `0.10`)
 - `BOT_MAX_POSITIONS` — max open positions (default: `3`)
 - `BOT_MODE` — `paper` (default) or `live` stub
 - `BOT_SERVE_UI` — `1` (default) serves local HTML from the backend, `0` makes the backend API-only
+- `BOT_TELEGRAM_BOT_TOKEN` — optional Telegram bot token for alerts
+- `BOT_TELEGRAM_CHAT_ID` — optional Telegram chat id for alerts
+
+## API endpoints
+
+- `GET /health` — simple health check
+- `GET /api/state` — current dashboard state
+- `GET /api/snapshots?limit=120` — snapshot history for the PnL chart
+- `GET /api/journal?limit=60` — combined signal / trade / error journal
+- `POST /api/control` — pause, resume, or force a rescan
 
 ## Notes
 

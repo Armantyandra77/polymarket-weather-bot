@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from .models import Market, Position, Signal, Trade
+from .notifier import TelegramNotifier
 from .strategy import WeatherStrategy
 from .store import Store
 
@@ -77,12 +78,14 @@ class BotEngine:
         strategy: WeatherStrategy,
         mode: str = "paper",
         bankroll: float = 100.0,
+        notifier: Optional[TelegramNotifier] = None,
     ):
         self.store = store
         self.strategy = strategy
         self.mode = mode
         self.executor = PaperExecutor(store, bankroll=bankroll)
         self.bankroll = bankroll
+        self.notifier = notifier or TelegramNotifier.from_env()
 
     def scan_and_trade(self, markets: List[Market]) -> Dict[str, Any]:
         self.store.upsert_markets(markets)
@@ -96,16 +99,29 @@ class BotEngine:
                 signal: Signal = res["signal"]
                 self.store.save_signal(signal)
                 signals.append(asdict(signal))
+                try:
+                    self.notifier.notify_signal(signal)
+                except Exception:
+                    pass
                 if self.strategy.should_enter(signal, open_positions):
                     qty = self.strategy.recommended_size(signal, bankroll=self.bankroll)
                     if qty > 0:
                         pos = self.executor.open_position(signal, qty)
                         open_positions += 1
                         self.store.save_snapshot({"event": "opened_position", "position": asdict(pos)})
+                        try:
+                            self.notifier.notify_position(pos)
+                        except Exception:
+                            pass
                 # mark-to-market with the current market price as a baseline
                 self.executor.mark_to_market(signal.market_id, signal.market_prob)
             except Exception as e:
-                self.store.save_error({"market_id": market.id, "question": market.question, "error": str(e)})
+                payload = {"market_id": market.id, "question": market.question, "error": str(e)}
+                self.store.save_error(payload)
+                try:
+                    self.notifier.notify_error(str(e), payload)
+                except Exception:
+                    pass
         snapshot = self._build_snapshot(signals)
         self.store.save_snapshot(snapshot)
         return snapshot

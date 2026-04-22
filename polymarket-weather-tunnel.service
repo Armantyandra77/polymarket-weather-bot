@@ -1,0 +1,14 @@
+[Unit]
+Description=Polymarket Weather Bot localhost.run Tunnel
+Wants=network-online.target polymarket-weather-bot.service
+After=network-online.target polymarket-weather-bot.service
+
+[Service]
+Type=simple
+User=ubuntu
+ExecStart=/usr/bin/ssh -N -o ServerAliveInterval=60 -o StrictHostKeyChecking=no -R 80:localhost:3000 nokey@localhost.run
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

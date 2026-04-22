@@ -3,16 +3,23 @@ from __future__ import annotations
 import os
 import threading
 import time
-from dataclasses import asdict
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from .bot import BotEngine
 from .dashboard import serve_dashboard
-from .models import Market
+from .notifier import TelegramNotifier
 from .polymarket import discover_weather_markets
 from .strategy import WeatherStrategy
 from .store import Store
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in ('1', 'true', 'yes', 'on', 'y')
 
 
 def run_once(store: Store, engine: BotEngine, min_volume: float) -> Dict[str, Any]:
@@ -24,6 +31,7 @@ def run_forever():
     db_path = os.getenv('BOT_DB_PATH', './bot.db')
     port = int(os.getenv('BOT_PORT', '8080'))
     poll_seconds = int(os.getenv('BOT_POLL_SECONDS', '300'))
+    control_poll_seconds = int(os.getenv('BOT_CONTROL_POLL_SECONDS', '20'))
     min_volume = float(os.getenv('BOT_MIN_VOLUME', '5000'))
     max_spread = float(os.getenv('BOT_MAX_SPREAD', '0.08'))
     edge_threshold = float(os.getenv('BOT_EDGE_THRESHOLD', '0.10'))
@@ -32,23 +40,49 @@ def run_forever():
     serve_ui = os.getenv('BOT_SERVE_UI', '1') not in ('0', 'false', 'False', 'no', 'NO')
 
     store = Store(db_path)
+    notifier = TelegramNotifier.from_env()
     strategy = WeatherStrategy(
         min_volume=min_volume,
         max_spread=max_spread,
         edge_threshold=edge_threshold,
         max_positions=max_positions,
     )
-    engine = BotEngine(store, strategy, mode=mode)
+    engine = BotEngine(store, strategy, mode=mode, notifier=notifier)
     serve_dashboard(store, port=port, serve_ui=serve_ui)
 
     def worker():
         while True:
             try:
+                controls = store.get_controls()
+                paused = _truthy(controls.get('paused', False))
+                force_scan = _truthy(controls.get('force_scan', False))
+                if paused and not force_scan:
+                    time.sleep(control_poll_seconds)
+                    continue
+
                 snapshot = run_once(store, engine, min_volume=min_volume)
+                snapshot['controls'] = controls
+                snapshot['alerts'] = notifier.health()
+                snapshot['bot_health'] = {
+                    'paused': paused,
+                    'force_scan': force_scan,
+                    'backend': 'running',
+                    'scan_mode': mode,
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
+                }
                 store.save_snapshot(snapshot)
+
+                if force_scan:
+                    store.set_control('force_scan', False)
+                time.sleep(control_poll_seconds if paused else poll_seconds)
             except Exception as e:
-                store.save_error({"error": str(e), "stage": "worker_loop"})
-            time.sleep(poll_seconds)
+                payload = {'error': str(e), 'stage': 'worker_loop'}
+                store.save_error(payload)
+                try:
+                    notifier.notify_error(str(e), payload)
+                except Exception:
+                    pass
+                time.sleep(control_poll_seconds)
 
     t = threading.Thread(target=worker, daemon=True)
     t.start()
