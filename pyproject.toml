@@ -1,0 +1,16 @@
+[project]
+name = "polymarket-weather-bot"
+version = "0.1.0"
+description = "Noise-filtered Polymarket weather market scanner with live PnL dashboard"
+requires-python = ">=3.11"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "Hermes"}]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"

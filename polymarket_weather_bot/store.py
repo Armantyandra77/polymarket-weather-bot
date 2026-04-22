@@ -1,0 +1,176 @@
+from __future__ import annotations
+
+import json
+import os
+import sqlite3
+from dataclasses import asdict
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional
+
+from .models import Market, Position, Signal, Trade
+
+
+class Store:
+    def __init__(self, path: str):
+        self.path = path
+        self._init_db()
+
+    def _connect(self):
+        conn = sqlite3.connect(self.path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _init_db(self):
+        Path(self.path).parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as conn:
+            conn.executescript(
+                """
+                PRAGMA journal_mode=WAL;
+                CREATE TABLE IF NOT EXISTS markets (
+                    id TEXT PRIMARY KEY,
+                    question TEXT,
+                    slug TEXT,
+                    condition_id TEXT,
+                    yes_price REAL,
+                    no_price REAL,
+                    volume REAL,
+                    liquidity REAL,
+                    active INTEGER,
+                    closed INTEGER,
+                    end_date TEXT,
+                    category TEXT,
+                    updated_at TEXT
+                );
+                CREATE TABLE IF NOT EXISTS signals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    market_id TEXT,
+                    payload TEXT,
+                    created_at TEXT
+                );
+                CREATE TABLE IF NOT EXISTS positions (
+                    market_id TEXT PRIMARY KEY,
+                    payload TEXT,
+                    updated_at TEXT
+                );
+                CREATE TABLE IF NOT EXISTS trades (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    market_id TEXT,
+                    payload TEXT,
+                    created_at TEXT
+                );
+                CREATE TABLE IF NOT EXISTS snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    payload TEXT,
+                    created_at TEXT
+                );
+                CREATE TABLE IF NOT EXISTS errors (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    payload TEXT,
+                    created_at TEXT
+                );
+                """
+            )
+
+    def upsert_markets(self, markets: Iterable[Market]):
+        with self._connect() as conn:
+            for m in markets:
+                conn.execute(
+                    """
+                    INSERT INTO markets (id, question, slug, condition_id, yes_price, no_price, volume, liquidity, active, closed, end_date, category, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        question=excluded.question,
+                        slug=excluded.slug,
+                        condition_id=excluded.condition_id,
+                        yes_price=excluded.yes_price,
+                        no_price=excluded.no_price,
+                        volume=excluded.volume,
+                        liquidity=excluded.liquidity,
+                        active=excluded.active,
+                        closed=excluded.closed,
+                        end_date=excluded.end_date,
+                        category=excluded.category,
+                        updated_at=excluded.updated_at
+                    """,
+                    (
+                        m.id, m.question, m.slug, m.condition_id, m.yes_price, m.no_price, m.volume,
+                        m.liquidity, int(m.active), int(m.closed), m.end_date, m.category,
+                        datetime.now(timezone.utc).isoformat(),
+                    ),
+                )
+
+    def save_signal(self, signal: Signal):
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO signals (market_id, payload, created_at) VALUES (?, ?, ?)",
+                (signal.market_id, json.dumps(asdict(signal), ensure_ascii=False), signal.generated_at),
+            )
+
+    def save_position(self, position: Position):
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO positions (market_id, payload, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(market_id) DO UPDATE SET
+                    payload=excluded.payload,
+                    updated_at=excluded.updated_at
+                """,
+                (position.market_id, json.dumps(asdict(position), ensure_ascii=False), position.updated_at),
+            )
+
+    def delete_position(self, market_id: str):
+        with self._connect() as conn:
+            conn.execute("DELETE FROM positions WHERE market_id = ?", (market_id,))
+
+    def save_trade(self, trade: Trade):
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO trades (market_id, payload, created_at) VALUES (?, ?, ?)",
+                (trade.market_id, json.dumps(asdict(trade), ensure_ascii=False), trade.created_at),
+            )
+
+    def save_snapshot(self, payload: Dict[str, Any]):
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO snapshots (payload, created_at) VALUES (?, ?)",
+                (json.dumps(payload, ensure_ascii=False), datetime.now(timezone.utc).isoformat()),
+            )
+
+    def save_error(self, payload: Dict[str, Any]):
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO errors (payload, created_at) VALUES (?, ?)",
+                (json.dumps(payload, ensure_ascii=False), datetime.now(timezone.utc).isoformat()),
+            )
+
+    def get_positions(self) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT payload FROM positions ORDER BY updated_at DESC").fetchall()
+            return [json.loads(r[0]) for r in rows]
+
+    def get_trades(self, limit: int = 100) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT payload FROM trades ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            return [json.loads(r[0]) for r in rows]
+
+    def get_signals(self, limit: int = 100) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT payload FROM signals ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            return [json.loads(r[0]) for r in rows]
+
+    def get_markets(self, limit: int = 100) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT * FROM markets ORDER BY volume DESC LIMIT ?", (limit,)).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_last_snapshot(self) -> Optional[Dict[str, Any]]:
+        with self._connect() as conn:
+            row = conn.execute("SELECT payload FROM snapshots ORDER BY id DESC LIMIT 1").fetchone()
+            return json.loads(row[0]) if row else None
+
+    def get_last_error(self) -> Optional[Dict[str, Any]]:
+        with self._connect() as conn:
+            row = conn.execute("SELECT payload FROM errors ORDER BY id DESC LIMIT 1").fetchone()
+            return json.loads(row[0]) if row else None

@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Polymarket Weather Bot</title>
+  <style>
+    :root {
+      --bg: #07111f;
+      --bg2: #0b1728;
+      --panel: rgba(14, 24, 42, 0.82);
+      --panel-2: rgba(18, 31, 54, 0.92);
+      --line: rgba(110, 145, 214, 0.16);
+      --text: #edf4ff;
+      --muted: #9fb2d4;
+      --good: #4ade80;
+      --bad: #fb7185;
+      --cyan: #67e8f9;
+      --blue: #60a5fa;
+      --amber: #fbbf24;
+      --shadow: 0 20px 60px rgba(0, 0, 0, 0.32);
+      --radius: 24px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(96, 165, 250, 0.20), transparent 26%),
+        radial-gradient(circle at top right, rgba(103, 232, 249, 0.12), transparent 18%),
+        linear-gradient(180deg, var(--bg) 0%, var(--bg2) 48%, #08131f 100%);
+    }
+
+    .shell { max-width: 1440px; margin: 0 auto; padding: 28px 22px 34px; }
+    .hero { display: grid; grid-template-columns: 1.8fr 1fr; gap: 16px; align-items: stretch; margin-bottom: 18px; }
+    .hero-main, .hero-side, .card {
+      background: linear-gradient(180deg, rgba(14, 24, 42, 0.92), rgba(9, 17, 32, 0.92));
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      border-radius: var(--radius);
+      backdrop-filter: blur(10px);
+    }
+    .hero-main { padding: 26px; overflow: hidden; position: relative; }
+    .hero-main::before {
+      content: "";
+      position: absolute;
+      inset: -1px;
+      border-radius: inherit;
+      padding: 1px;
+      background: linear-gradient(135deg, rgba(96, 165, 250, 0.34), rgba(103, 232, 249, 0.06), rgba(74, 222, 128, 0.18));
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      pointer-events: none;
+    }
+    .title-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+    .brand { display: flex; gap: 14px; align-items: center; }
+    .brand-badge {
+      width: 54px; height: 54px; border-radius: 18px; display: grid; place-items: center; font-size: 26px;
+      background: linear-gradient(135deg, rgba(96, 165, 250, 0.28), rgba(103, 232, 249, 0.16));
+      border: 1px solid rgba(103, 232, 249, 0.18);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+    }
+    h1 { margin: 0; font-size: clamp(30px, 4vw, 46px); line-height: 1.05; letter-spacing: -0.03em; }
+    .subtitle { color: var(--muted); margin-top: 8px; max-width: 760px; line-height: 1.5; }
+    .chip-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 999px; font-size: 12px;
+      letter-spacing: 0.02em; color: #d8e5ff; background: rgba(20, 33, 56, 0.82);
+      border: 1px solid rgba(160, 189, 255, 0.16);
+    }
+    .chip strong { color: white; }
+    .hero-side { padding: 18px; display: grid; gap: 12px; }
+    .stat-hero {
+      padding: 18px; border-radius: 18px; background: linear-gradient(180deg, rgba(17, 28, 49, 0.96), rgba(12, 20, 34, 0.96));
+      border: 1px solid rgba(160, 189, 255, 0.12);
+    }
+    .stat-label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 8px; }
+    .stat-value { font-size: 30px; font-weight: 800; letter-spacing: -0.03em; }
+    .stat-sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+    .live-dot { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: #cde1ff; }
+    .live-dot::before { content: ""; width: 10px; height: 10px; border-radius: 999px; background: var(--good); box-shadow: 0 0 0 6px rgba(74, 222, 128, 0.12); }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin: 14px 0 18px; }
+    .card { padding: 16px; }
+    .metric { min-height: 118px; position: relative; overflow: hidden; }
+    .metric::after { content: ""; position: absolute; inset: auto -20px -24px auto; width: 92px; height: 92px; border-radius: 999px; background: radial-gradient(circle, rgba(103, 232, 249, 0.18), transparent 66%); pointer-events: none; }
+    .value { font-size: 31px; font-weight: 800; margin-top: 8px; letter-spacing: -0.03em; }
+    .good { color: var(--good); } .bad { color: var(--bad); } .cyan { color: var(--cyan); } .amber { color: var(--amber); } .blue { color: var(--blue); }
+    .section { margin-top: 14px; display: grid; gap: 14px; }
+    .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+    .section-title { display: flex; flex-direction: column; gap: 4px; }
+    .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.16em; }
+    .section-title h2 { margin: 0; font-size: 20px; letter-spacing: -0.02em; }
+    .small-note { color: var(--muted); font-size: 13px; }
+    .table-wrap { overflow-x: auto; border-radius: 18px; border: 1px solid rgba(160, 189, 255, 0.12); background: rgba(8, 15, 29, 0.55); }
+    table { width: 100%; border-collapse: collapse; min-width: 760px; }
+    th, td { padding: 14px 12px; border-bottom: 1px solid rgba(160, 189, 255, 0.10); vertical-align: top; text-align: left; }
+    th { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em; background: rgba(14, 24, 42, 0.9); position: sticky; top: 0; z-index: 1; }
+    .pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: rgba(103, 232, 249, 0.08); color: #dffbff; border: 1px solid rgba(103, 232, 249, 0.16); font-size: 12px; font-weight: 600; }
+    .muted { color: var(--muted); } .mono { font-variant-numeric: tabular-nums; }
+    .list { display: grid; gap: 12px; }
+    .signal-card { display: grid; gap: 10px; padding: 16px; border-radius: 18px; background: linear-gradient(180deg, rgba(15, 26, 45, 0.95), rgba(10, 18, 33, 0.95)); border: 1px solid rgba(160, 189, 255, 0.12); }
+    .signal-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .signal-title { font-weight: 700; font-size: 15px; }
+    .signal-meta { color: var(--muted); font-size: 13px; line-height: 1.45; }
+    .edgebar { height: 8px; border-radius: 999px; background: rgba(160, 189, 255, 0.12); overflow: hidden; }
+    .edgebar > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, rgba(96, 165, 250, 0.9), rgba(103, 232, 249, 0.9), rgba(74, 222, 128, 0.95)); }
+    .footer { margin-top: 18px; color: var(--muted); font-size: 12px; line-height: 1.6; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .footer code { background: rgba(160, 189, 255, 0.12); padding: 2px 6px; border-radius: 6px; color: #eef5ff; }
+    .empty { padding: 18px; border-radius: 18px; background: rgba(10, 18, 33, 0.7); border: 1px dashed rgba(160, 189, 255, 0.18); color: var(--muted); }
+    .error-banner { display: none; margin-top: 14px; padding: 14px 16px; border-radius: 16px; background: rgba(251, 113, 133, 0.10); border: 1px solid rgba(251, 113, 133, 0.22); color: #ffd8df; }
+    @media (max-width: 1200px) { .hero { grid-template-columns: 1fr; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 720px) { .shell { padding: 16px 12px 24px; } .hero-main { padding: 18px; } .grid { grid-template-columns: 1fr; } .hero-side { padding: 14px; } .stat-value { font-size: 26px; } .section-title h2 { font-size: 18px; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="hero">
+      <div class="hero-main">
+        <div class="title-row">
+          <div class="brand">
+            <div class="brand-badge">🌦️</div>
+            <div>
+              <h1>Polymarket Weather Bot</h1>
+              <div class="subtitle">
+                Noise-filtered scan • deterministic edge engine • paper/live tracking dashboard.
+                Dibuat untuk tampil premium di Vercel, tetap ringan di VPS, dan enak dibuka dari browser biasa.
+              </div>
+            </div>
+          </div>
+          <div class="chip live-dot" id="last-refresh">connecting…</div>
+        </div>
+
+        <div class="chip-row">
+          <div class="chip"><strong>Mode</strong> <span id="chip-mode">paper</span></div>
+          <div class="chip"><strong>API</strong> <span id="chip-api">same-origin</span></div>
+          <div class="chip"><strong>Updated</strong> <span id="chip-updated">—</span></div>
+          <div class="chip"><strong>Signal Style</strong> <span>deterministic</span></div>
+        </div>
+
+        <div class="error-banner" id="error-banner"></div>
+      </div>
+
+      <div class="hero-side">
+        <div class="stat-hero">
+          <div class="stat-label">Open Positions</div>
+          <div class="stat-value mono" id="hero-open-positions">0</div>
+          <div class="stat-sub">Jumlah posisi aktif yang sedang dipantau.</div>
+        </div>
+        <div class="stat-hero">
+          <div class="stat-label">Live Value</div>
+          <div class="stat-value mono" id="hero-live-value">$0.00</div>
+          <div class="stat-sub">Nilai mark-to-market dari posisi paper/live.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid" id="stats"></div>
+
+    <div class="section">
+      <div class="section-head">
+        <div class="section-title">
+          <div class="label">Overview</div>
+          <h2>Dashboard Snapshot</h2>
+        </div>
+        <div class="small-note">Live data source: Polymarket public API + Open-Meteo</div>
+      </div>
+
+      <div class="card">
+        <div class="section-head" style="margin-bottom:12px;">
+          <div class="section-title">
+            <div class="label">Open Positions</div>
+            <h2>Open Positions</h2>
+          </div>
+          <div class="small-note" id="positions-count">—</div>
+        </div>
+        <div class="table-wrap">
+          <table id="positions"></table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-head" style="margin-bottom:12px;">
+          <div class="section-title">
+            <div class="label">Recent Signals</div>
+            <h2>Recent Signals</h2>
+          </div>
+          <div class="small-note">Noise-filtered candidates only</div>
+        </div>
+        <div class="list" id="signals"></div>
+      </div>
+
+      <div class="card">
+        <div class="section-head" style="margin-bottom:12px;">
+          <div class="section-title">
+            <div class="label">Recent Trades</div>
+            <h2>Recent Trades</h2>
+          </div>
+          <div class="small-note" id="trade-note">—</div>
+        </div>
+        <div class="list" id="trades"></div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div>Data source: <code>Polymarket public API</code> + <code>Open-Meteo</code>. Default mode is paper unless a live executor is wired.</div>
+      <div>Vercel-ready: host this folder and append <code>?api=https://YOUR-VPS-DOMAIN</code>.</div>
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const API_BASE = (params.get('api') || window.__API_BASE__ || '').replace(/\/$/, '');
+    const stateUrl = API_BASE ? `${API_BASE}/api/state` : '/api/state';
+    const apiLabel = API_BASE ? API_BASE : 'same-origin';
+    const refreshEl = document.getElementById('last-refresh');
+    const errorBanner = document.getElementById('error-banner');
+
+    document.getElementById('chip-api').textContent = apiLabel;
+
+    function money(v) {
+      const n = Number(v || 0);
+      return `$${n.toFixed(2)}`;
+    }
+
+    function pct(v) {
+      const n = Number(v || 0) * 100;
+      return `${n.toFixed(1)}%`;
+    }
+
+    function fmtPnL(v) {
+      const n = Number(v || 0);
+      return `${n >= 0 ? '+' : ''}${n.toFixed(3)}`;
+    }
+
+    async function refresh() {
+      const response = await fetch(stateUrl, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+
+      errorBanner.style.display = 'none';
+      refreshEl.textContent = 'updated ' + new Date().toLocaleTimeString();
+      document.getElementById('chip-updated').textContent = new Date().toLocaleTimeString();
+      document.getElementById('chip-mode').textContent = data.mode || 'paper';
+      document.getElementById('hero-open-positions').textContent = String(data.open_positions ?? 0);
+      document.getElementById('hero-live-value').textContent = money(data.live_value ?? 0);
+      document.getElementById('positions-count').textContent = `${data.open_positions ?? 0} active position(s)`;
+      document.getElementById('trade-note').textContent = `${(data.recent_trades || []).length} recent trade(s)`;
+
+      const pnl = Number(data.unrealized_pnl ?? 0);
+      const stats = [
+        ['Mode', data.mode || 'paper', 'cyan'],
+        ['Open Positions', data.open_positions ?? 0, 'good'],
+        ['Total Cost', money(data.total_cost ?? 0), 'amber'],
+        ['Live Value', money(data.live_value ?? 0), 'cyan'],
+        ['Unrealized PnL', money(pnl), pnl >= 0 ? 'good' : 'bad'],
+        ['Return %', `${Number(data.return_pct ?? 0).toFixed(2)}%`, 'amber'],
+        ['Signals', data.signals_count ?? 0, 'cyan'],
+        ['Markets Scanned', data.markets_scanned ?? 0, 'good'],
+      ];
+
+      document.getElementById('stats').innerHTML = stats.map(([label, value, tone]) => `
+        <div class="card metric">
+          <div class="label">${label}</div>
+          <div class="value ${tone} mono">${value}</div>
+        </div>
+      `).join('');
+
+      const positions = data.positions || [];
+      document.getElementById('positions').innerHTML = positions.length ? `
+        <thead>
+          <tr>
+            <th>Market</th>
+            <th>Side</th>
+            <th>Qty</th>
+            <th>Entry</th>
+            <th>Now</th>
+            <th>PnL</th>
+            <th>Model</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${positions.map(p => {
+            const entry = Number(p.avg_entry_price ?? 0);
+            const current = Number(p.current_price ?? entry);
+            const pnlValue = Number.isFinite(Number(p.unrealized_pnl))
+              ? Number(p.unrealized_pnl)
+              : (current - entry) * Number(p.quantity ?? 0);
+            return `
+              <tr>
+                <td>
+                  <div style="font-weight:700; line-height:1.35;">${p.question}</div>
+                  <div class="muted mono" style="margin-top:4px;">${p.market_id}</div>
+                </td>
+                <td><span class="pill">${p.side}</span></td>
+                <td class="mono">${Number(p.quantity).toFixed(2)}</td>
+                <td class="mono">${(entry * 100).toFixed(1)}%</td>
+                <td class="mono">${(current * 100).toFixed(1)}%</td>
+                <td class="mono ${pnlValue >= 0 ? 'good' : 'bad'}">${fmtPnL(pnlValue)}</td>
+                <td class="mono">${(Number(p.model_prob) * 100).toFixed(1)}%</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      ` : '<div class="empty">No open positions yet. Bot akan tampil di sini setelah ada entry yang lolos filter edge.</div>';
+
+      const signals = (data.recent_signals || []).slice(0, 8);
+      document.getElementById('signals').innerHTML = signals.length ? signals.map(s => {
+        const edge = Number(s.edge || 0);
+        const bar = Math.min(100, Math.max(8, Math.abs(edge) * 240));
+        const tone = edge >= 0 ? 'good' : 'bad';
+        return `
+          <div class="signal-card">
+            <div class="signal-top">
+              <div class="signal-title">${s.action} • ${s.question}</div>
+              <div class="pill mono ${tone}">edge ${pct(edge)}</div>
+            </div>
+            <div class="signal-meta">
+              Market <strong class="mono">${pct(s.market_prob)}</strong> • Model <strong class="mono">${pct(s.model_prob)}</strong> • Confidence <strong class="mono">${(Number(s.confidence || 0) * 100).toFixed(0)}%</strong><br/>
+              <span class="muted">${s.rationale}</span>
+            </div>
+            <div class="edgebar" title="Edge strength"><span style="width:${bar}%;"></span></div>
+          </div>
+        `;
+      }).join('') : '<div class="empty">Belum ada sinyal baru. Kalau edge belum masuk threshold, bot tetap diam — lebih aman & lebih rapi.</div>';
+
+      const trades = (data.recent_trades || []).slice(0, 8);
+      document.getElementById('trades').innerHTML = trades.length ? trades.map(t => `
+        <div class="signal-card">
+          <div class="signal-top">
+            <div class="signal-title">${t.side} • ${t.quantity} @ ${pct(t.price)}</div>
+            <div class="pill mono">${t.mode || 'paper'}</div>
+          </div>
+          <div class="signal-meta">
+            <span class="muted">${t.reason}</span>
+          </div>
+        </div>
+      `).join('') : '<div class="empty">Belum ada trade tercatat.</div>';
+    }
+
+    async function boot() {
+      try {
+        await refresh();
+        setInterval(() => refresh().catch(showError), 5000);
+      } catch (err) {
+        showError(err);
+      }
+    }
+
+    function showError(err) {
+      console.error('dashboard refresh failed', err);
+      refreshEl.textContent = 'error loading data';
+      errorBanner.textContent = `Gagal memuat data dari ${stateUrl}. Kalau dashboard dibuka dari Vercel, tambahkan ?api=https://YOUR-VPS-DOMAIN`;
+      errorBanner.style.display = 'block';
+    }
+
+    boot();
+  </script>
+</body>
+</html>

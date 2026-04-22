@@ -1,0 +1,141 @@
+from __future__ import annotations
+
+import json
+import os
+from dataclasses import asdict
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+from .models import Market, Position, Signal, Trade
+from .strategy import WeatherStrategy
+from .store import Store
+
+
+class PaperExecutor:
+    def __init__(self, store: Store, bankroll: float = 100.0):
+        self.store = store
+        self.bankroll = bankroll
+
+    def open_position(self, signal: Signal, quantity: float) -> Position:
+        now = datetime.now(timezone.utc).isoformat()
+        side = "YES" if signal.action == "BUY_YES" else "NO"
+        avg_entry = signal.market_prob
+        current = signal.market_prob
+        pos = Position(
+            market_id=signal.market_id,
+            question=signal.question,
+            side=side,
+            quantity=quantity,
+            avg_entry_price=avg_entry,
+            current_price=current,
+            market_prob=signal.market_prob,
+            model_prob=signal.model_prob,
+            opened_at=now,
+            updated_at=now,
+        )
+        self.store.save_position(pos)
+        self.store.save_trade(
+            Trade(
+                market_id=signal.market_id,
+                side=side,
+                quantity=quantity,
+                price=avg_entry,
+                reason=signal.rationale,
+                created_at=now,
+                mode="paper",
+            )
+        )
+        return pos
+
+    def mark_to_market(self, market_id: str, current_price: float):
+        positions = self.store.get_positions()
+        for p in positions:
+            if p["market_id"] != market_id:
+                continue
+            updated = Position(
+                market_id=p["market_id"],
+                question=p["question"],
+                side=p["side"],
+                quantity=float(p["quantity"]),
+                avg_entry_price=float(p["avg_entry_price"]),
+                current_price=current_price,
+                market_prob=float(p["market_prob"]),
+                model_prob=float(p["model_prob"]),
+                opened_at=p["opened_at"],
+                updated_at=datetime.now(timezone.utc).isoformat(),
+                status=p.get("status", "open"),
+            )
+            self.store.save_position(updated)
+            return updated
+        return None
+
+
+class BotEngine:
+    def __init__(
+        self,
+        store: Store,
+        strategy: WeatherStrategy,
+        mode: str = "paper",
+        bankroll: float = 100.0,
+    ):
+        self.store = store
+        self.strategy = strategy
+        self.mode = mode
+        self.executor = PaperExecutor(store, bankroll=bankroll)
+        self.bankroll = bankroll
+
+    def scan_and_trade(self, markets: List[Market]) -> Dict[str, Any]:
+        self.store.upsert_markets(markets)
+        signals = []
+        open_positions = len(self.store.get_positions())
+        for market in markets:
+            try:
+                res = self.strategy.analyze_market(market)
+                if res.get("skip"):
+                    continue
+                signal: Signal = res["signal"]
+                self.store.save_signal(signal)
+                signals.append(asdict(signal))
+                if self.strategy.should_enter(signal, open_positions):
+                    qty = self.strategy.recommended_size(signal, bankroll=self.bankroll)
+                    if qty > 0:
+                        pos = self.executor.open_position(signal, qty)
+                        open_positions += 1
+                        self.store.save_snapshot({"event": "opened_position", "position": asdict(pos)})
+                # mark-to-market with the current market price as a baseline
+                self.executor.mark_to_market(signal.market_id, signal.market_prob)
+            except Exception as e:
+                self.store.save_error({"market_id": market.id, "question": market.question, "error": str(e)})
+        snapshot = self._build_snapshot(signals)
+        self.store.save_snapshot(snapshot)
+        return snapshot
+
+    def _build_snapshot(self, signals: List[Dict[str, Any]]) -> Dict[str, Any]:
+        positions = self.store.get_positions()
+        trades = self.store.get_trades(50)
+        total_cost = 0.0
+        live_value = 0.0
+        unrealized = 0.0
+        for p in positions:
+            qty = float(p["quantity"])
+            avg = float(p["avg_entry_price"])
+            cur = float(p["current_price"])
+            total_cost += avg * qty
+            live_value += cur * qty
+            if p["side"].upper() == "YES":
+                unrealized += (cur - avg) * qty
+            else:
+                unrealized += ((1.0 - cur) - (1.0 - avg)) * qty
+        return {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "mode": self.mode,
+            "signals_count": len(signals),
+            "open_positions": len(positions),
+            "total_cost": round(total_cost, 4),
+            "live_value": round(live_value, 4),
+            "unrealized_pnl": round(unrealized, 4),
+            "return_pct": round((unrealized / total_cost * 100.0) if total_cost else 0.0, 2),
+            "positions": positions,
+            "recent_trades": trades,
+            "recent_signals": signals[:20],
+        }
