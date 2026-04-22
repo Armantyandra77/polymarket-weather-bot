@@ -1,0 +1,7 @@
+bot.db
+bot.db-shm
+bot.db-wal
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
