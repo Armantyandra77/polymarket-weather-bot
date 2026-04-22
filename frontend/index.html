@@ -208,7 +208,6 @@
           <div class="chip"><strong>Mode</strong> <span id="chip-mode">paper</span></div>
           <div class="chip"><strong>API</strong> <span id="chip-api">same-origin</span></div>
           <div class="chip"><strong>Updated</strong> <span id="chip-updated">—</span></div>
-          <div class="chip"><strong>Signal Style</strong> <span>deterministic</span></div>
         </div>
 
         <div class="error-banner" id="error-banner"></div>
@@ -471,7 +470,7 @@
     }
 
     function renderSignals(data) {
-      const signals = (data.recent_signals || []).slice(0, 8);
+      const signals = (data.recent_signals || []).slice(0, 6);
       document.getElementById('signals').innerHTML = signals.length ? signals.map(s => {
         const edge = Number(s.edge || 0);
         const bar = Math.min(100, Math.max(8, Math.abs(edge) * 240));
@@ -493,7 +492,7 @@
     }
 
     function renderTrades(data) {
-      const trades = (data.recent_trades || []).slice(0, 8);
+      const trades = (data.recent_trades || []).slice(0, 5);
       document.getElementById('trade-note').textContent = `${trades.length} recent trade(s)`;
       document.getElementById('trades').innerHTML = trades.length ? trades.map(t => `
         <div class="signal-card">
@@ -509,7 +508,7 @@
     }
 
     function renderJournal() {
-      const journal = (journalData.journal || []).slice(0, 12);
+      const journal = (journalData.journal || []).slice(0, 8);
       document.getElementById('journal').innerHTML = journal.length ? journal.map(item => `
         <div class="journal-item">
           <div class="journal-head">
