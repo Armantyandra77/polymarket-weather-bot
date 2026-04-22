@@ -6,6 +6,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict
 
+from .account import PolymarketAccountSync
 from .bot import BotEngine
 from .dashboard import serve_dashboard
 from .notifier import TelegramNotifier
@@ -47,7 +48,8 @@ def run_forever():
         edge_threshold=edge_threshold,
         max_positions=max_positions,
     )
-    engine = BotEngine(store, strategy, mode=mode, notifier=notifier)
+    account_sync = PolymarketAccountSync.from_env()
+    engine = BotEngine(store, strategy, mode=mode, notifier=notifier, account_sync=account_sync)
     serve_dashboard(store, port=port, serve_ui=serve_ui)
 
     def worker():

@@ -67,6 +67,15 @@ The backend on the VPS stays responsible for the bot loop and `/api/state`.
 - `BOT_SERVE_UI` — `1` (default) serves local HTML from the backend, `0` makes the backend API-only
 - `BOT_TELEGRAM_BOT_TOKEN` — optional Telegram bot token for alerts
 - `BOT_TELEGRAM_CHAT_ID` — optional Telegram chat id for alerts
+- `BOT_POLYMARKET_WALLET_ADDRESS` — wallet/proxy wallet address for live portfolio sync
+- `BOT_POLYMARKET_FUNDER_ADDRESS` — fallback wallet address if `BOT_POLYMARKET_WALLET_ADDRESS` is not set
+- `BOT_POLYMARKET_PRIVATE_KEY` — wallet private key for authenticated balance / open orders sync
+- `BOT_POLYMARKET_API_KEY` — optional CLOB API key
+- `BOT_POLYMARKET_API_SECRET` — optional CLOB API secret
+- `BOT_POLYMARKET_API_PASSPHRASE` — optional CLOB API passphrase
+- `BOT_POLYMARKET_CLOB_HOST` — CLOB host override (default: `https://clob.polymarket.com`)
+- `BOT_POLYMARKET_CHAIN_ID` — chain id used by the CLOB client (default: `137`)
+- `BOT_POLYMARKET_SIGNATURE_TYPE` — signature type for the CLOB client (default: `0`)
 
 ## API endpoints
 
@@ -79,5 +88,6 @@ The backend on the VPS stays responsible for the bot loop and `/api/state`.
 ## Notes
 
 - Live Polymarket execution is intentionally left as a guarded stub.
+- Live account sync can show portfolio, balance, and open positions when the Polymarket wallet/credentials env vars are set.
 - The system is designed to keep noise low and only surface tradable situations.
 - If the weather market question cannot be parsed confidently, the market is skipped.

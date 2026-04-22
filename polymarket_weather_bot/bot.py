@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from .models import Market, Position, Signal, Trade
+from .account import PolymarketAccountSync
 from .notifier import TelegramNotifier
 from .strategy import WeatherStrategy
 from .store import Store
@@ -79,6 +80,7 @@ class BotEngine:
         mode: str = "paper",
         bankroll: float = 100.0,
         notifier: Optional[TelegramNotifier] = None,
+        account_sync: Optional[PolymarketAccountSync] = None,
     ):
         self.store = store
         self.strategy = strategy
@@ -86,6 +88,7 @@ class BotEngine:
         self.executor = PaperExecutor(store, bankroll=bankroll)
         self.bankroll = bankroll
         self.notifier = notifier or TelegramNotifier.from_env()
+        self.account_sync = account_sync
 
     def scan_and_trade(self, markets: List[Market]) -> Dict[str, Any]:
         self.store.upsert_markets(markets)
@@ -122,11 +125,28 @@ class BotEngine:
                     self.notifier.notify_error(str(e), payload)
                 except Exception:
                     pass
-        snapshot = self._build_snapshot(signals)
+        live_account = None
+        if self.account_sync is not None:
+            try:
+                live_account = self.account_sync.sync()
+            except Exception as exc:
+                live_account = {
+                    "enabled": False,
+                    "status": "error",
+                    "errors": [str(exc)],
+                    "warnings": [],
+                    "positions": [],
+                    "positions_count": 0,
+                    "portfolio_value": 0.0,
+                    "balance": {},
+                    "open_orders": [],
+                    "open_orders_count": 0,
+                }
+        snapshot = self._build_snapshot(signals, live_account=live_account)
         self.store.save_snapshot(snapshot)
         return snapshot
 
-    def _build_snapshot(self, signals: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _build_snapshot(self, signals: List[Dict[str, Any]], live_account: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         positions = self.store.get_positions()
         trades = self.store.get_trades(50)
         total_cost = 0.0
@@ -154,4 +174,5 @@ class BotEngine:
             "positions": positions,
             "recent_trades": trades,
             "recent_signals": signals[:20],
+            "live_account": live_account or {},
         }

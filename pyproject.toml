@@ -1,10 +1,14 @@
 [project]
 name = "polymarket-weather-bot"
 version = "0.1.0"
-description = "Noise-filtered Polymarket weather market scanner with live PnL dashboard"
+description = "Noise-filtered Polymarket weather bot with dashboard"
 requires-python = ">=3.11"
+dependencies = [
+    "py-clob-client>=0.21.0",
+]
 readme = "README.md"
 license = {text = "MIT"}
+
 authors = [{name = "Hermes"}]
 
 [tool.pytest.ini_options]

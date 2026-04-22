@@ -74,6 +74,7 @@ class DashboardState:
         recent_errors = self.store.get_errors(12)
         alerts = self._alerts_health(snapshot)
         bot_health = snapshot.get('bot_health') or {}
+        live_account = snapshot.get('live_account') or {}
 
         return {
             'mode': snapshot.get('mode', os.getenv('BOT_MODE', 'paper')),
@@ -94,6 +95,7 @@ class DashboardState:
             'controls': controls,
             'alerts': alerts,
             'bot_health': bot_health,
+            'live_account': live_account,
             'health': {
                 'paused': _truthy(controls.get('paused', False)),
                 'force_scan': _truthy(controls.get('force_scan', False)),

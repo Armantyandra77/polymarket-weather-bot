@@ -1,3 +1,4 @@
+from polymarket_weather_bot.account import PolymarketAccountConfig, PolymarketAccountSync
 from polymarket_weather_bot.parser import parse_market_question, range_probability, one_tailed_probability
 from polymarket_weather_bot.models import Market, Signal, Trade
 from polymarket_weather_bot.strategy import WeatherStrategy
@@ -52,6 +53,57 @@ def test_strategy_builds_signal_for_weather_market(monkeypatch):
     assert signal.action in ('BUY_YES', 'BUY_NO', 'HOLD')
 
 
+def test_live_account_sync_normalizes_profile_positions_and_balance():
+    def fake_http_get(url, params=None, timeout=25):
+        if 'public-profile' in url:
+            return {
+                'name': 'King Wallet',
+                'pseudonym': 'king-alpha',
+                'xUsername': 'kingalpha',
+                'proxyWallet': '0xProxy',
+                'verifiedBadge': True,
+            }
+        if '/positions' in url:
+            return [
+                {
+                    'title': 'Will Toronto be below 12°C on 2026-04-24?',
+                    'slug': 'toronto-weather',
+                    'conditionId': '0xabc',
+                    'outcome': 'YES',
+                    'size': '4.5',
+                    'avgPrice': '0.0625',
+                    'currentValue': '0.2',
+                    'cashPnl': '0.05',
+                    'percentPnl': '33.3',
+                    'curPrice': '0.08',
+                }
+            ]
+        if '/value' in url:
+            return {'value': '0.2'}
+        raise AssertionError(f'unexpected url {url}')
+
+    class FakeClient:
+        def get_balance_allowance(self, params=None):
+            return {'balance': '12.34', 'allowance': '20.00'}
+
+        def get_orders(self, params=None, next_cursor='MA=='):
+            return [{'id': 'order-1'}]
+
+    sync = PolymarketAccountSync(
+        PolymarketAccountConfig(wallet_address='0xabc', private_key='0xdeadbeef'),
+        http_get=fake_http_get,
+        client_factory=lambda config: FakeClient(),
+    )
+    result = sync.sync()
+    assert result['status'] == 'connected'
+    assert result['profile']['name'] == 'King Wallet'
+    assert result['positions_count'] == 1
+    assert result['positions'][0]['outcome'] == 'YES'
+    assert result['portfolio_value'] == 0.2
+    assert result['balance']['balance'] == 12.34
+    assert result['open_orders_count'] == 1
+
+
 def test_dashboard_state_and_controls(tmp_path):
     store = Store(str(tmp_path / 'bot.db'))
     store.set_control('paused', True)
@@ -61,3 +113,4 @@ def test_dashboard_state_and_controls(tmp_path):
     assert state['controls']['paused'] is True
     assert state['alerts']['enabled'] in (True, False)
     assert 'freshness_seconds' in state
+

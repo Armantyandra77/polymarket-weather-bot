@@ -1,0 +1,249 @@
+from __future__ import annotations
+
+import json
+import os
+import urllib.parse
+import urllib.request
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+DATA_API = "https://data-api.polymarket.com"
+GAMMA_API = "https://gamma-api.polymarket.com"
+CLOB_API = os.getenv("BOT_POLYMARKET_CLOB_HOST", "https://clob.polymarket.com")
+DEFAULT_CHAIN_ID = int(os.getenv("BOT_POLYMARKET_CHAIN_ID", "137"))
+DEFAULT_SIGNATURE_TYPE = int(os.getenv("BOT_POLYMARKET_SIGNATURE_TYPE", "0"))
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
+def _get_json(url: str, params: Optional[Dict[str, Any]] = None, timeout: int = 25) -> Any:
+    if params:
+        url = f"{url}?{urllib.parse.urlencode(params, doseq=True)}"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+@dataclass(frozen=True)
+class PolymarketAccountConfig:
+    wallet_address: str | None = None
+    private_key: str | None = None
+    funder_address: str | None = None
+    api_key: str | None = None
+    api_secret: str | None = None
+    api_passphrase: str | None = None
+    chain_id: int = DEFAULT_CHAIN_ID
+    signature_type: int = DEFAULT_SIGNATURE_TYPE
+    clob_host: str = CLOB_API
+
+    @classmethod
+    def from_env(cls) -> "PolymarketAccountConfig":
+        wallet_address = os.getenv("BOT_POLYMARKET_WALLET_ADDRESS") or os.getenv("BOT_POLYMARKET_PUBLIC_ADDRESS")
+        funder_address = os.getenv("BOT_POLYMARKET_FUNDER_ADDRESS") or None
+        return cls(
+            wallet_address=wallet_address or funder_address,
+            private_key=os.getenv("BOT_POLYMARKET_PRIVATE_KEY") or None,
+            funder_address=funder_address,
+            api_key=os.getenv("BOT_POLYMARKET_API_KEY") or None,
+            api_secret=os.getenv("BOT_POLYMARKET_API_SECRET") or None,
+            api_passphrase=os.getenv("BOT_POLYMARKET_API_PASSPHRASE") or None,
+            chain_id=int(os.getenv("BOT_POLYMARKET_CHAIN_ID", str(DEFAULT_CHAIN_ID))),
+            signature_type=int(os.getenv("BOT_POLYMARKET_SIGNATURE_TYPE", str(DEFAULT_SIGNATURE_TYPE))),
+            clob_host=os.getenv("BOT_POLYMARKET_CLOB_HOST", CLOB_API),
+        )
+
+
+class PolymarketAccountSync:
+    def __init__(
+        self,
+        config: PolymarketAccountConfig,
+        http_get=_get_json,
+        client_factory=None,
+    ):
+        self.config = config
+        self.http_get = http_get
+        self._client_factory = client_factory
+        self._client = None
+
+    @classmethod
+    def from_env(cls) -> "PolymarketAccountSync":
+        return cls(PolymarketAccountConfig.from_env())
+
+    def enabled(self) -> bool:
+        return bool(self.config.wallet_address or self.config.private_key or self.config.api_key)
+
+    def _normalize_position(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "title": payload.get("title") or payload.get("question") or payload.get("slug") or "Unknown market",
+            "slug": payload.get("slug"),
+            "condition_id": payload.get("conditionId") or payload.get("condition_id"),
+            "outcome": payload.get("outcome") or payload.get("side") or payload.get("asset"),
+            "size": float(payload.get("size") or payload.get("netPosition") or payload.get("quantity") or 0),
+            "avg_price": float(payload.get("avgPrice") or payload.get("avg_price") or payload.get("averagePrice") or 0),
+            "current_value": float(payload.get("currentValue") or payload.get("current_value") or 0),
+            "initial_value": float(payload.get("initialValue") or payload.get("initial_value") or 0),
+            "cash_pnl": float(payload.get("cashPnl") or payload.get("cash_pnl") or 0),
+            "percent_pnl": float(payload.get("percentPnl") or payload.get("percent_pnl") or 0),
+            "cur_price": float(payload.get("curPrice") or payload.get("cur_price") or 0),
+            "redeemable": bool(payload.get("redeemable", False)),
+            "mergeable": bool(payload.get("mergeable", False)),
+            "end_date": payload.get("endDate") or payload.get("end_date"),
+            "proxy_wallet": payload.get("proxyWallet") or payload.get("proxy_wallet"),
+            "updated_at": payload.get("updateTime") or payload.get("updated_at") or datetime.now(timezone.utc).isoformat(),
+            "raw": payload,
+        }
+
+    def _build_client(self):
+        if self._client is not None:
+            return self._client
+
+        if self._client_factory is not None:
+            try:
+                self._client = self._client_factory(self.config)
+                return self._client
+            except Exception as exc:
+                return {"error": str(exc)}
+
+        if not self.config.private_key:
+            return None
+
+        try:
+            from py_clob_client.client import ClobClient
+            from py_clob_client.clob_types import ApiCreds
+        except Exception as exc:
+            return {"error": f"py_clob_client unavailable: {exc}"}
+
+        creds = None
+        if self.config.api_key and self.config.api_secret and self.config.api_passphrase:
+            creds = ApiCreds(
+                api_key=self.config.api_key,
+                api_secret=self.config.api_secret,
+                api_passphrase=self.config.api_passphrase,
+            )
+
+        try:
+            client = ClobClient(
+                self.config.clob_host,
+                key=self.config.private_key,
+                chain_id=self.config.chain_id,
+                creds=creds,
+                signature_type=self.config.signature_type,
+                funder=self.config.funder_address,
+            )
+            if creds is None:
+                client.set_api_creds(client.create_or_derive_api_creds())
+            self._client = client
+            return self._client
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    def sync(self) -> Dict[str, Any]:
+        result: Dict[str, Any] = {
+            "enabled": self.enabled(),
+            "status": "disabled",
+            "wallet_address": self.config.wallet_address,
+            "profile": {},
+            "positions": [],
+            "positions_count": 0,
+            "portfolio_value": 0.0,
+            "balance": {},
+            "open_orders_count": 0,
+            "open_orders": [],
+            "warnings": [],
+            "errors": [],
+            "synced_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        wallet_address = self.config.wallet_address
+        if not result["enabled"]:
+            result["warnings"].append("Set BOT_POLYMARKET_WALLET_ADDRESS or BOT_POLYMARKET_FUNDER_ADDRESS to enable live account sync.")
+            return result
+
+        read_only_ok = False
+        if wallet_address:
+            try:
+                profile = self.http_get(f"{GAMMA_API}/public-profile", {"address": wallet_address})
+                result["profile"] = {
+                    "name": profile.get("name"),
+                    "pseudonym": profile.get("pseudonym"),
+                    "x_username": profile.get("xUsername"),
+                    "proxy_wallet": profile.get("proxyWallet"),
+                    "verified_badge": bool(profile.get("verifiedBadge", False)),
+                    "created_at": profile.get("createdAt"),
+                    "bio": profile.get("bio"),
+                    "raw": profile,
+                }
+            except Exception as exc:
+                result["warnings"].append(f"profile lookup failed: {exc}")
+
+            try:
+                positions_raw = self.http_get(f"{DATA_API}/positions", {"user": wallet_address, "limit": 100})
+                if isinstance(positions_raw, list):
+                    result["positions"] = [self._normalize_position(p) for p in positions_raw]
+                    result["positions_count"] = len(result["positions"])
+                    read_only_ok = True
+            except Exception as exc:
+                result["warnings"].append(f"positions lookup failed: {exc}")
+
+            try:
+                values_raw = self.http_get(f"{DATA_API}/value", {"user": wallet_address})
+                total_value = 0.0
+                if isinstance(values_raw, list):
+                    for item in values_raw:
+                        if isinstance(item, dict) and item.get("value") is not None:
+                            total_value += float(item.get("value") or 0.0)
+                elif isinstance(values_raw, dict) and values_raw.get("value") is not None:
+                    total_value = float(values_raw.get("value") or 0.0)
+                elif result["positions"]:
+                    total_value = sum(float(p.get("current_value") or 0.0) for p in result["positions"])
+                result["portfolio_value"] = round(total_value, 4)
+                read_only_ok = True
+            except Exception as exc:
+                result["warnings"].append(f"portfolio value lookup failed: {exc}")
+                if result["positions"]:
+                    result["portfolio_value"] = round(sum(float(p.get("current_value") or 0.0) for p in result["positions"]), 4)
+                    read_only_ok = True
+
+        client = self._build_client()
+        if isinstance(client, dict) and client.get("error"):
+            result["errors"].append(client["error"])
+            result["status"] = "partial"
+            return result
+
+        if client is not None:
+            try:
+                from py_clob_client.clob_types import AssetType, BalanceAllowanceParams, OpenOrderParams
+
+                collateral = client.get_balance_allowance(
+                    params=BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
+                )
+                result["balance"] = {
+                    "balance": float(collateral.get("balance") or 0.0),
+                    "allowance": float(collateral.get("allowance") or 0.0),
+                    "raw": collateral,
+                }
+                try:
+                    orders = client.get_orders(OpenOrderParams())
+                    if isinstance(orders, list):
+                        result["open_orders"] = orders
+                        result["open_orders_count"] = len(orders)
+                except Exception as exc:
+                    result["warnings"].append(f"open orders lookup failed: {exc}")
+                result["status"] = "connected"
+                return result
+            except Exception as exc:
+                result["errors"].append(str(exc))
+                result["status"] = "partial" if read_only_ok else "error"
+                return result
+
+        result["status"] = "read_only" if read_only_ok else "error"
+        if not read_only_ok:
+            result["warnings"].append("No live data could be fetched from Polymarket.")
+        return result
