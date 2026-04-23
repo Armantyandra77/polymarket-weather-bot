@@ -3,6 +3,7 @@ from __future__ import annotations
 import binascii
 import json
 import os
+import re
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -13,9 +14,12 @@ DATA_API = "https://data-api.polymarket.com"
 GAMMA_API = "https://gamma-api.polymarket.com"
 CLOB_API = os.getenv("BOT_POLYMARKET_CLOB_HOST", "https://clob.polymarket.com")
 POLYGON_RPC_URL = os.getenv("BOT_POLYMARKET_RPC_URL", "https://polygon-bor.publicnode.com")
+SOLANA_RPC_URL = os.getenv("BOT_POLYMARKET_SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
 USDC_POLYGON = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
+USDC_SOLANA = os.getenv("BOT_POLYMARKET_SOLANA_USDC_MINT", "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
 DEFAULT_CHAIN_ID = int(os.getenv("BOT_POLYMARKET_CHAIN_ID", "137"))
 DEFAULT_SIGNATURE_TYPE = int(os.getenv("BOT_POLYMARKET_SIGNATURE_TYPE", "0"))
+BASE58_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
 
 
 def _truthy(value: Any) -> bool:
@@ -37,6 +41,14 @@ def _get_json(url: str, params: Optional[Dict[str, Any]] = None, timeout: int = 
 def _hex_address(addr: str) -> str:
     raw = addr.lower().replace('0x', '')
     return raw.rjust(64, '0')
+
+
+def _is_evm_address(addr: str | None) -> bool:
+    return bool(addr and addr.startswith('0x') and len(addr) == 42)
+
+
+def _is_solana_address(addr: str | None) -> bool:
+    return bool(addr and not addr.startswith('0x') and BASE58_RE.fullmatch(addr))
 
 
 def _rpc_post(url: str, method: str, params: list[Any], timeout: int = 25) -> Any:
@@ -63,7 +75,47 @@ def _rpc_post_with_fallback(method: str, params: list[Any], timeout: int = 25) -
     raise RuntimeError("RPC request failed")
 
 
+def _rpc_post_solana_with_fallback(method: str, params: list[Any], timeout: int = 25) -> Any:
+    endpoints = [
+        os.getenv("BOT_POLYMARKET_SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com"),
+        "https://api.mainnet-beta.solana.com",
+        "https://solana-api.projectserum.com",
+    ]
+    last_exc: Exception | None = None
+    for endpoint in endpoints:
+        try:
+            return _rpc_post(endpoint, method, params, timeout=timeout)
+        except Exception as exc:
+            last_exc = exc
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("Solana RPC request failed")
+
+
 def _get_onchain_usdc_balance(wallet_address: str) -> float:
+    if _is_solana_address(wallet_address):
+        response = _rpc_post_solana_with_fallback(
+            "getTokenAccountsByOwner",
+            [
+                wallet_address,
+                {"mint": USDC_SOLANA},
+                {"encoding": "jsonParsed"},
+            ],
+        )
+        result = response.get("result") if isinstance(response, dict) else None
+        value = result.get("value") if isinstance(result, dict) else None
+        if not isinstance(value, list):
+            return 0.0
+        total = 0.0
+        for item in value:
+            try:
+                info = item.get("account", {}).get("data", {}).get("parsed", {}).get("info", {})
+                token_amount = info.get("tokenAmount", {})
+                total += float(token_amount.get("uiAmount") or 0.0)
+            except Exception:
+                continue
+        return total
+
     data = '0x70a08231000000000000000000000000' + _hex_address(wallet_address)
     result = _rpc_post(POLYGON_RPC_URL, 'eth_call', [{"to": USDC_POLYGON, "data": data}, 'latest'])
     value = result.get('result') if isinstance(result, dict) else None
@@ -75,6 +127,7 @@ def _get_onchain_usdc_balance(wallet_address: str) -> float:
 @dataclass(frozen=True)
 class PolymarketAccountConfig:
     wallet_address: str | None = None
+    deposit_address: str | None = None
     private_key: str | None = None
     funder_address: str | None = None
     api_key: str | None = None
@@ -87,9 +140,11 @@ class PolymarketAccountConfig:
     @classmethod
     def from_env(cls) -> "PolymarketAccountConfig":
         wallet_address = os.getenv("BOT_POLYMARKET_WALLET_ADDRESS") or os.getenv("BOT_POLYMARKET_PUBLIC_ADDRESS")
+        deposit_address = os.getenv("BOT_POLYMARKET_DEPOSIT_ADDRESS") or os.getenv("BOT_POLYMARKET_SOLANA_ADDRESS")
         funder_address = os.getenv("BOT_POLYMARKET_FUNDER_ADDRESS") or None
         return cls(
             wallet_address=wallet_address or funder_address,
+            deposit_address=deposit_address or wallet_address or funder_address,
             private_key=os.getenv("BOT_POLYMARKET_PRIVATE_KEY") or None,
             funder_address=funder_address,
             api_key=os.getenv("BOT_POLYMARKET_API_KEY") or None,
@@ -190,6 +245,7 @@ class PolymarketAccountSync:
             "enabled": self.enabled(),
             "status": "disabled",
             "wallet_address": self.config.wallet_address,
+            "deposit_address": self.config.deposit_address,
             "profile": {},
             "positions": [],
             "positions_count": 0,
@@ -205,12 +261,13 @@ class PolymarketAccountSync:
         }
 
         wallet_address = self.config.wallet_address
+        balance_address = self.config.deposit_address or wallet_address
         if not result["enabled"]:
             result["warnings"].append("Set BOT_POLYMARKET_WALLET_ADDRESS or BOT_POLYMARKET_FUNDER_ADDRESS to enable live account sync.")
             return result
 
         read_only_ok = False
-        if wallet_address:
+        if wallet_address and _is_evm_address(wallet_address):
             try:
                 profile = self.http_get(f"{GAMMA_API}/public-profile", {"address": wallet_address})
                 result["profile"] = {
@@ -254,14 +311,17 @@ class PolymarketAccountSync:
                     result["portfolio_value"] = round(sum(float(p.get("current_value") or 0.0) for p in result["positions"]), 4)
                     read_only_ok = True
 
-            try:
-                wallet_balance = _get_onchain_usdc_balance(wallet_address)
-                result["wallet_balance"] = round(wallet_balance, 4)
-                result["equity"] = round(wallet_balance + result["portfolio_value"], 4)
-                read_only_ok = True
-            except Exception as exc:
-                result["warnings"].append(f"wallet balance lookup failed: {exc}")
-                result["equity"] = round(result["portfolio_value"], 4)
+        try:
+            wallet_balance = _get_onchain_usdc_balance(balance_address)
+            result["wallet_balance"] = round(wallet_balance, 4)
+            result["equity"] = round(wallet_balance + result["portfolio_value"], 4)
+            read_only_ok = True
+        except Exception as exc:
+            result["warnings"].append(f"wallet balance lookup failed: {exc}")
+            result["equity"] = round(result["portfolio_value"], 4)
+
+        if balance_address and _is_solana_address(balance_address):
+            result["warnings"].append("Solana deposit address detected; syncing on-chain USDC only for wallet balance.")
 
         client = self._build_client()
         if isinstance(client, dict) and client.get("error"):

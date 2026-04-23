@@ -90,7 +90,7 @@ def test_live_account_sync_normalizes_profile_positions_and_balance():
             return [{'id': 'order-1'}]
 
     sync = PolymarketAccountSync(
-        PolymarketAccountConfig(wallet_address='0xabc', private_key='0xdeadbeef'),
+        PolymarketAccountConfig(wallet_address='0x1234567890abcdef1234567890abcdef12345678', private_key='0xdeadbeef'),
         http_get=fake_http_get,
         client_factory=lambda config: FakeClient(),
     )
@@ -102,6 +102,33 @@ def test_live_account_sync_normalizes_profile_positions_and_balance():
     assert result['portfolio_value'] == 0.2
     assert result['balance']['balance'] == 12.34
     assert result['open_orders_count'] == 1
+
+
+def test_live_account_sync_supports_solana_deposit_balance(monkeypatch):
+    monkeypatch.setattr('polymarket_weather_bot.account._get_onchain_usdc_balance', lambda addr: 3.69)
+
+    class FakeClient:
+        def get_balance_allowance(self, params=None):
+            return {'balance': '3.69', 'allowance': '0.00'}
+
+        def get_orders(self, params=None, next_cursor='MA=='):
+            return []
+
+    sync = PolymarketAccountSync(
+        PolymarketAccountConfig(
+            wallet_address='0x1234567890abcdef1234567890abcdef12345678',
+            deposit_address='Anb1TGWNeu7Nb4LXoikpYGsouQkvzosqVxfAXwk1527',
+            private_key='0xdeadbeef',
+        ),
+        http_get=lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError('should not call public profile endpoints for Solana deposit balance lookups')),
+        client_factory=lambda config: FakeClient(),
+    )
+    result = sync.sync()
+    assert result['status'] == 'connected'
+    assert result['wallet_balance'] == 3.69
+    assert result['equity'] == 3.69
+    assert result['positions_count'] == 0
+    assert result['open_orders_count'] == 0
 
 
 def test_dashboard_state_and_controls(tmp_path):

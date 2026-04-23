@@ -67,14 +67,17 @@ The backend on the VPS stays responsible for the bot loop and `/api/state`.
 - `BOT_SERVE_UI` — `1` (default) serves local HTML from the backend, `0` makes the backend API-only
 - `BOT_TELEGRAM_BOT_TOKEN` — optional Telegram bot token for alerts
 - `BOT_TELEGRAM_CHAT_ID` — optional Telegram chat id for alerts
-- `BOT_POLYMARKET_WALLET_ADDRESS` — wallet/proxy wallet address for live portfolio sync
+- `BOT_POLYMARKET_WALLET_ADDRESS` — wallet/proxy wallet address for Polymarket profile / CLOB auth
 - `BOT_POLYMARKET_FUNDER_ADDRESS` — fallback wallet address if `BOT_POLYMARKET_WALLET_ADDRESS` is not set
+- `BOT_POLYMARKET_DEPOSIT_ADDRESS` — optional Solana deposit address used for wallet balance lookup when deposits are on Solana
 - `BOT_POLYMARKET_PRIVATE_KEY` — wallet private key for authenticated balance / open orders sync
 - `BOT_POLYMARKET_API_KEY` — optional CLOB API key
 - `BOT_POLYMARKET_API_SECRET` — optional CLOB API secret
 - `BOT_POLYMARKET_API_PASSPHRASE` — optional CLOB API passphrase
 - `BOT_POLYMARKET_CLOB_HOST` — CLOB host override (default: `https://clob.polymarket.com`)
-- `BOT_POLYMARKET_RPC_URL` — Polygon RPC used to read on-chain wallet USDC balance (default: `https://polygon-bor.publicnode.com`)
+- `BOT_POLYMARKET_RPC_URL` — Polygon RPC used to read EVM wallet USDC balance (default: `https://polygon-bor.publicnode.com`)
+- `BOT_POLYMARKET_SOLANA_RPC_URL` — Solana RPC used when the account address is a Solana deposit address (default: `https://api.mainnet-beta.solana.com`)
+- `BOT_POLYMARKET_SOLANA_USDC_MINT` — USDC mint used for Solana balance lookup (default: `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`)
 - `BOT_POLYMARKET_CHAIN_ID` — chain id used by the CLOB client (default: `137`)
 - `BOT_POLYMARKET_SIGNATURE_TYPE` — signature type for the CLOB client (default: `0`)
 

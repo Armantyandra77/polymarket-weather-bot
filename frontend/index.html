@@ -596,6 +596,7 @@
       const status = account.status || (account.enabled ? 'partial' : 'disabled');
       const statusTone = status === 'connected' ? 'good' : status === 'read_only' ? 'cyan' : status === 'partial' ? 'amber' : 'bad';
       const wallet = account.wallet_address || profile.proxy_wallet || '—';
+      const deposit = account.deposit_address || '—';
       const name = profile.name || profile.pseudonym || profile.x_username || 'Live account';
       const synced = account.synced_at ? t(account.synced_at) : '—';
       const buyingPower = Number(balance.allowance ?? 0) || 0;
@@ -632,6 +633,7 @@
         <div class="account-meta">
           ${profile.x_username ? `<div class="chip"><strong>X</strong> <span>@${esc(profile.x_username)}</span></div>` : ''}
           ${profile.proxy_wallet ? `<div class="chip"><strong>Proxy</strong> <span class="mono">${esc(profile.proxy_wallet)}</span></div>` : ''}
+          <div class="chip"><strong>Deposit</strong> <span class="mono">${esc(deposit)}</span></div>
           <div class="chip"><strong>Synced</strong> <span class="mono">${esc(synced)}</span></div>
         </div>
         <div class="account-note">${warnings.length ? `Warnings: ${warnings.map(esc).join(' • ')}` : 'Live account sync aktif dan siap dipantau.'}${errors.length ? `<br/>Errors: ${errors.map(esc).join(' • ')}` : ''}</div>
