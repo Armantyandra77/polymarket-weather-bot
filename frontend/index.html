@@ -198,6 +198,24 @@
     .account-market { font-weight: 700; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     .account-subtle { color: var(--muted); font-size: 12px; margin-top: 4px; }
     .account-positions-empty { padding: 18px; color: var(--muted); }
+    #positions th:nth-child(1), #positions td:nth-child(1) { background: linear-gradient(90deg, rgba(103, 232, 249, 0.03), transparent 65%); }
+    #positions th:nth-child(2), #positions td:nth-child(2) { background: rgba(39, 194, 106, 0.03); }
+    #positions th:nth-child(3), #positions td:nth-child(3) { background: rgba(119, 148, 255, 0.03); }
+    #positions th:nth-child(4), #positions td:nth-child(4) { background: rgba(244, 183, 64, 0.03); }
+    #positions th:nth-child(5), #positions td:nth-child(5) { background: rgba(103, 232, 249, 0.03); }
+    #positions th:nth-child(6), #positions td:nth-child(6) { background: rgba(39, 194, 106, 0.03); }
+    #positions th:nth-child(7), #positions td:nth-child(7) { background: rgba(119, 148, 255, 0.03); }
+    .live-only-banner { display: inline-flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 999px; background: rgba(39, 194, 106, 0.09); border: 1px solid rgba(39, 194, 106, 0.18); color: #daf7e8; font-size: 12px; font-weight: 700; }
+    .live-only-banner::before { content: ""; width: 8px; height: 8px; border-radius: 999px; background: var(--good); box-shadow: 0 0 0 6px rgba(39, 194, 106, 0.12); }
+    .section-soft { background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.018)); }
+    .table-wrap thead th { color: #cfd8ea; }
+    .account-table th:nth-child(1), .account-table td:nth-child(1) { background: linear-gradient(90deg, rgba(103, 232, 249, 0.03), transparent 65%); }
+    .account-table th:nth-child(2), .account-table td:nth-child(2) { background: rgba(244, 183, 64, 0.03); }
+    .account-table th:nth-child(3), .account-table td:nth-child(3) { background: rgba(119, 148, 255, 0.03); }
+    .account-table th:nth-child(4), .account-table td:nth-child(4) { background: rgba(103, 232, 249, 0.03); }
+    .account-table th:nth-child(5), .account-table td:nth-child(5) { background: rgba(39, 194, 106, 0.03); }
+    .account-table th:nth-child(6), .account-table td:nth-child(6) { background: rgba(39, 194, 106, 0.03); }
+    .account-table th:nth-child(7), .account-table td:nth-child(7) { background: rgba(119, 148, 255, 0.03); }
     @media (max-width: 1200px) { .hero { grid-template-columns: 1fr; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .metric:first-child { grid-column: span 2; } .panel-grid { grid-template-columns: 1fr; } .account-grid { grid-template-columns: 1fr; } .account-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     @media (max-width: 720px) { .shell { padding: 16px 12px 24px; } .hero-main { padding: 18px; } .grid { grid-template-columns: 1fr; } .metric:first-child { grid-column: span 1; } .hero-side { padding: 12px; } .stat-value { font-size: 26px; } .section-title h2 { font-size: 18px; } .mini-kpis, .status-grid { grid-template-columns: 1fr; } .account-grid, .account-summary { grid-template-columns: 1fr; } table { min-width: 760px; } }
   </style>
@@ -212,8 +230,8 @@
             <div>
               <h1>Polymarket Weather Bot</h1>
               <div class="subtitle">
-                Noise-filtered scan • deterministic edge engine • paper/live tracking dashboard.
-                Dibuat untuk tampil premium di Vercel, tetap ringan di VPS, dan enak dibuka dari browser biasa.
+                Noise-filtered scan • deterministic edge engine • live-only tracking dashboard.
+                Dibuat dengan rasa Linear x Stripe: gelap, rapi, premium, dan tetap enak dibaca.
               </div>
             </div>
           </div>
@@ -240,12 +258,12 @@
         <div class="stat-hero">
           <div class="stat-label">Open Positions</div>
           <div class="stat-value mono" id="hero-open-positions">0</div>
-          <div class="stat-sub">Jumlah posisi aktif yang sedang dipantau.</div>
+          <div class="stat-sub">Posisi live aktif yang tersinkron dari Polymarket.</div>
         </div>
         <div class="stat-hero">
           <div class="stat-label">Live Value</div>
           <div class="stat-value mono" id="hero-live-value">$0.00</div>
-          <div class="stat-sub">Nilai mark-to-market dari posisi paper/live.</div>
+          <div class="stat-sub">Nilai mark-to-market dari data live Polymarket.</div>
         </div>
       </div>
     </div>
@@ -265,10 +283,10 @@
         <div class="card">
           <div class="section-head" style="margin-bottom:12px;">
             <div class="section-title">
-              <div class="label">Open Positions</div>
-              <h2>Open Positions</h2>
+              <div class="label">Live Positions</div>
+              <h2>Live Positions</h2>
             </div>
-            <div class="small-note" id="positions-count">—</div>
+            <div class="live-only-banner">Live only • paper data hidden</div>
           </div>
           <div class="table-wrap">
             <table id="positions"></table>
@@ -462,8 +480,9 @@
     }
 
     function renderPositions(data) {
-      const positions = data.positions || [];
-      document.getElementById('positions-count').textContent = `${data.open_positions ?? 0} active position(s)`;
+      const positions = (data.live_positions && data.live_positions.length ? data.live_positions : (data.positions || []));
+      const countEl = document.getElementById('positions-count');
+      if (countEl) countEl.textContent = `${positions.length} live position(s)`;
       document.getElementById('positions').innerHTML = positions.length ? `
         <thead>
           <tr>
@@ -483,6 +502,8 @@
             const pnlValue = Number.isFinite(Number(p.unrealized_pnl))
               ? Number(p.unrealized_pnl)
               : (current - entry) * Number(p.quantity ?? 0);
+            const modelProb = Number(p.model_prob);
+            const modelText = Number.isFinite(modelProb) && modelProb > 0 ? pct(modelProb) : '—';
             return `
               <tr>
                 <td>
@@ -494,12 +515,12 @@
                 <td class="mono">${(entry * 100).toFixed(1)}%</td>
                 <td class="mono">${(current * 100).toFixed(1)}%</td>
                 <td class="mono ${pnlValue >= 0 ? 'good' : 'bad'}">${fmtPnL(pnlValue)}</td>
-                <td class="mono">${(Number(p.model_prob) * 100).toFixed(1)}%</td>
+                <td class="mono">${esc(modelText)}</td>
               </tr>
             `;
           }).join('')}
         </tbody>
-      ` : '<div class="empty">No open positions yet. Bot akan tampil di sini setelah ada entry yang lolos filter edge.</div>';
+      ` : '<div class="empty">Belum ada live position yang tersinkron. Paper positions disembunyikan.</div>';
     }
 
     function renderSignals(data) {
@@ -525,23 +546,27 @@
     }
 
     function renderTrades(data) {
-      const trades = (data.recent_trades || []).slice(0, 5);
-      document.getElementById('trade-note').textContent = `${trades.length} recent trade(s)`;
+      const trades = (data.live_trades && data.live_trades.length ? data.live_trades : (data.recent_trades || []).filter(t => String(t.source || t.mode || '').toLowerCase() === 'live')).slice(0, 5);
+      document.getElementById('trade-note').textContent = `${trades.length} live trade(s)`;
       document.getElementById('trades').innerHTML = trades.length ? trades.map(t => `
         <div class="signal-card">
           <div class="signal-top">
             <div class="signal-title">${esc(t.side)} • ${esc(t.quantity)} @ ${pct(t.price)}</div>
-            <div class="pill mono">${esc(t.mode || 'paper')}</div>
+            <div class="pill mono">live</div>
           </div>
           <div class="signal-meta">
             <span class="muted">${esc(t.reason)}</span>
           </div>
         </div>
-      `).join('') : '<div class="empty">Belum ada trade tercatat.</div>';
+      `).join('') : '<div class="empty">Belum ada trade live tercatat.</div>';
     }
 
     function renderJournal() {
-      const journal = (journalData.journal || []).slice(0, 8);
+      const journal = (journalData.journal || []).filter(item => {
+        if (item.kind !== 'trade') return true;
+        const payload = item.payload || {};
+        return String(payload.source || payload.mode || '').toLowerCase() === 'live';
+      }).slice(0, 8);
       document.getElementById('journal').innerHTML = journal.length ? journal.map(item => `
         <div class="journal-item">
           <div class="journal-head">
@@ -553,7 +578,7 @@
           </div>
           <div class="journal-detail">${esc(item.detail || '')}</div>
         </div>
-      `).join('') : '<div class="empty">Journal masih kosong.</div>';
+      `).join('') : '<div class="empty">Journal live masih kosong.</div>';
     }
 
     function renderHealth(data) {

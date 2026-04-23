@@ -76,17 +76,64 @@ class DashboardState:
         bot_health = snapshot.get('bot_health') or {}
         live_account = snapshot.get('live_account') or {}
 
+        live_mode_active = bool(live_account.get('enabled')) and str(live_account.get('status', '')).lower() in {'connected', 'read_only', 'partial'}
+
+        live_positions: List[Dict[str, Any]] = []
+        live_trades: List[Dict[str, Any]] = []
+        if live_mode_active:
+            for p in live_account.get('positions') or []:
+                try:
+                    size = float(p.get('size') or 0.0)
+                    avg_price = float(p.get('avg_price') or 0.0)
+                    current_price = float(p.get('cur_price') or 0.0)
+                    current_value = float(p.get('current_value') or (size * current_price))
+                    live_positions.append({
+                        'market_id': p.get('slug') or p.get('condition_id') or p.get('title') or 'live-position',
+                        'question': p.get('title') or p.get('slug') or 'Live position',
+                        'side': p.get('outcome') or 'LIVE',
+                        'quantity': size,
+                        'avg_entry_price': avg_price,
+                        'current_price': current_price,
+                        'market_prob': current_price,
+                        'model_prob': current_price,
+                        'opened_at': p.get('updated_at') or p.get('opened_at') or p.get('updatedAt') or last_snapshot_at,
+                        'updated_at': p.get('updated_at') or p.get('updatedAt') or last_snapshot_at,
+                        'status': 'open',
+                        'order_id': p.get('order_id'),
+                        'source': 'live',
+                        'budget': None,
+                        'meta': {'current_value': current_value, 'slug': p.get('slug'), 'condition_id': p.get('condition_id')},
+                        'unrealized_pnl': float(p.get('cash_pnl') or 0.0),
+                    })
+                except Exception:
+                    continue
+            live_trades = [t for t in trades if str(t.get('source', '')).lower() == 'live' or str(t.get('mode', '')).lower() == 'live']
+            positions = live_positions
+            trades = live_trades
+
+        total_cost = snapshot.get('total_cost', 0.0)
+        live_value = snapshot.get('live_value', 0.0)
+        unrealized_pnl = snapshot.get('unrealized_pnl', 0.0)
+        return_pct = snapshot.get('return_pct', 0.0)
+        if live_mode_active:
+            total_cost = round(sum(float(p.get('avg_entry_price', 0.0)) * float(p.get('quantity', 0.0)) for p in live_positions), 4)
+            live_value = round(sum(float((p.get('meta') or {}).get('current_value', 0.0)) for p in live_positions), 4)
+            unrealized_pnl = round(sum(float(p.get('unrealized_pnl', 0.0)) for p in live_positions), 4)
+            return_pct = round((unrealized_pnl / total_cost * 100.0) if total_cost else 0.0, 2)
+
         return {
             'mode': snapshot.get('mode', os.getenv('BOT_MODE', 'paper')),
             'signals_count': snapshot.get('signals_count', 0),
-            'open_positions': snapshot.get('open_positions', len(positions)),
-            'total_cost': snapshot.get('total_cost', 0.0),
-            'live_value': snapshot.get('live_value', 0.0),
-            'unrealized_pnl': snapshot.get('unrealized_pnl', 0.0),
-            'return_pct': snapshot.get('return_pct', 0.0),
+            'open_positions': len(positions) if live_mode_active else snapshot.get('open_positions', len(positions)),
+            'total_cost': total_cost,
+            'live_value': live_value,
+            'unrealized_pnl': unrealized_pnl,
+            'return_pct': return_pct,
             'positions': positions,
+            'live_positions': live_positions,
             'recent_signals': signals,
             'recent_trades': trades,
+            'live_trades': live_trades,
             'recent_errors': recent_errors,
             'markets_scanned': len(self.store.get_markets(1000)),
             'last_error': self.store.get_last_error(),
