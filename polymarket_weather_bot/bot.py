@@ -104,7 +104,11 @@ class BotEngine:
     def scan_and_trade(self, markets: List[Market]) -> Dict[str, Any]:
         self.store.upsert_markets(markets)
         signals = []
-        open_positions = len(self.store.get_positions())
+        positions_snapshot = self.store.get_positions()
+        if self.mode == 'live':
+            open_positions = len([p for p in positions_snapshot if str(p.get('source', 'paper')).lower() == 'live' and str(p.get('status', 'open')).lower() == 'open'])
+        else:
+            open_positions = len([p for p in positions_snapshot if str(p.get('status', 'open')).lower() == 'open'])
         for market in markets:
             try:
                 res = self.strategy.analyze_market(market)

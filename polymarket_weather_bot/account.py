@@ -310,6 +310,11 @@ class PolymarketAccountSync:
             "balance": {},
             "open_orders_count": 0,
             "open_orders": [],
+            "trading_ready": False,
+            "auth_layers": {
+                "l1_private_key": bool(self.config.private_key),
+                "l2_api_creds": bool(self.config.api_key and self.config.api_secret and self.config.api_passphrase),
+            },
             "warnings": [],
             "errors": [],
             "synced_at": datetime.now(timezone.utc).isoformat(),
@@ -408,6 +413,7 @@ class PolymarketAccountSync:
                 except Exception as exc:
                     result["warnings"].append(f"open orders lookup failed: {exc}")
                 result["status"] = "connected"
+                result["trading_ready"] = True
                 return result
             except Exception as exc:
                 result["errors"].append(str(exc))

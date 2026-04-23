@@ -167,6 +167,7 @@ def test_live_account_sync_normalizes_profile_positions_and_balance():
     assert result['portfolio_value'] == 0.2
     assert result['balance']['balance'] == 12.34
     assert result['open_orders_count'] == 1
+    assert result['trading_ready'] is True
 
 
 def test_live_account_sync_supports_solana_deposit_balance(monkeypatch):

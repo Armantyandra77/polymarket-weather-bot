@@ -236,6 +236,8 @@ class PolymarketLiveExecutor:
         for p in positions:
             if p["market_id"] != market_id:
                 continue
+            if str(p.get("source", "paper")).lower() != "live":
+                continue
             updated = Position(
                 market_id=p["market_id"],
                 question=p["question"],
