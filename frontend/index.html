@@ -257,6 +257,36 @@
     .chart-legend { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
     .chart { width: 100%; height: 250px; display: block; }
     .controls { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+    .analytics-grid { display: grid; grid-template-columns: 1.7fr 1fr; gap: 14px; align-items: stretch; }
+    .analytics-main { display: grid; gap: 12px; }
+    .analytics-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .analytics-rail { display: flex; flex-wrap: wrap; gap: 8px; }
+    .analytics-chip { padding: 8px 10px; border-radius: 999px; border: 1px solid rgba(148,163,184,0.16); background: #f8fafc; color: #344054; font-size: 12px; font-weight: 700; }
+    .analytics-chip.good { background: rgba(34, 197, 94, 0.10); border-color: rgba(34, 197, 94, 0.18); color: #166534; }
+    .analytics-chip.bad { background: rgba(251, 113, 133, 0.10); border-color: rgba(251, 113, 133, 0.18); color: #9f1239; }
+    .analytics-chip.cyan { background: rgba(56, 189, 248, 0.10); border-color: rgba(56, 189, 248, 0.18); color: #075985; }
+    .analytics-shell { display: grid; gap: 12px; }
+    .analytics-side { display: grid; gap: 12px; }
+    .analytics-side-title { font-size: 14px; font-weight: 800; color: #101828; letter-spacing: -0.02em; }
+    .analytics-stack { display: grid; gap: 10px; }
+    .analytics-card { padding: 14px; border-radius: 16px; border: 1px solid rgba(148,163,184,0.16); background: linear-gradient(180deg, rgba(248,250,252,0.96), rgba(255,255,255,0.96)); }
+    .analytics-card-k { color: #98a2b3; font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; font-weight: 700; }
+    .analytics-card-v { margin-top: 6px; font-size: 18px; font-weight: 800; color: #101828; }
+    .analytics-card-v.good { color: var(--good); }
+    .analytics-card-v.bad { color: var(--bad); }
+    .analytics-card-sub { margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .analytics-mini { display: grid; gap: 8px; }
+    .analytics-mini-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+    .analytics-mini-title { font-size: 12px; font-weight: 800; color: #101828; text-transform: uppercase; letter-spacing: 0.12em; }
+    .analytics-mini-note { color: var(--muted); font-size: 12px; }
+    .analytics-mini-svg { width: 100%; height: 132px; display: block; }
+    .copy-btn {
+      appearance: none; border: 1px solid rgba(148,163,184,0.18); background: #fff; color: #475467;
+      border-radius: 999px; padding: 4px 9px; font-size: 11px; font-weight: 700; cursor: pointer;
+      transition: transform 120ms ease, border-color 120ms ease, background 120ms ease, color 120ms ease;
+    }
+    .copy-btn:hover { border-color: rgba(99,102,241,0.30); background: #eef2ff; color: #4f46e5; transform: translateY(-1px); }
+    .copy-btn.copied { background: rgba(34,197,94,0.12); border-color: rgba(34,197,94,0.26); color: #166534; }
     .btn {
       appearance: none; border: 1px solid rgba(148,163,184,0.20); background: #ffffff; color: #111827;
       padding: 10px 13px; border-radius: 13px; cursor: pointer; font-weight: 600; letter-spacing: 0.01em;
@@ -805,6 +835,45 @@
       return `${s.slice(0, head)}…${s.slice(-tail)}`;
     }
 
+    function normalizePercent(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return 0;
+      return Math.abs(n) > 100 ? n / 100 : n;
+    }
+
+    async function copyText(value, button) {
+      const text = String(value ?? '').trim();
+      if (!text) return false;
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          document.execCommand('copy');
+          ta.remove();
+        }
+        if (button) {
+          const prev = button.textContent;
+          button.classList.add('copied');
+          button.textContent = 'Copied';
+          setTimeout(() => {
+            button.classList.remove('copied');
+            button.textContent = prev || 'Copy';
+          }, 1200);
+        }
+        return true;
+      } catch (err) {
+        console.warn('copy failed', err);
+        return false;
+      }
+    }
+
     function t(v) {
       if (!v) return '—';
       const d = new Date(v);
@@ -984,7 +1053,13 @@
       notifCloseBtn?.addEventListener('click', () => toggleNotifications(false));
       searchInput.addEventListener('input', () => applySearch());
       window.addEventListener('hashchange', () => setView(readHashView(), false));
-      document.addEventListener('click', (event) => {
+      document.addEventListener('click', async (event) => {
+        const copyBtn = event.target.closest?.('.copy-btn[data-copy]');
+        if (copyBtn) {
+          event.preventDefault();
+          await copyText(copyBtn.dataset.copy, copyBtn);
+          return;
+        }
         if (!notifPanel.hidden && !notifPanel.contains(event.target) && !notifBtn.contains(event.target)) {
           toggleNotifications(false);
         }
@@ -1252,10 +1327,17 @@
           </div>
           <div class="pill mono ${statusTone}" title="Sync status">${esc(status)}</div>
         </div>
+        <div class="analytics-rail">
+          <span class="analytics-chip ${statusTone}">${esc(status)}</span>
+          <span class="analytics-chip cyan">auth ${esc(authType)}</span>
+          <span class="analytics-chip good">${esc(positionsCount)} position(s)</span>
+          <span class="analytics-chip bad">${esc(openOrders)} open order(s)</span>
+        </div>
         <div class="account-quick">
           <div class="account-quick-card">
             <div class="account-quick-k">Proxy</div>
             <div class="account-quick-v mono" title="${esc(proxy)}">${esc(shortProxy)}</div>
+            <div style="margin-top:8px;display:flex;justify-content:flex-end;"><button class="copy-btn" type="button" data-copy="${esc(proxy)}">Copy</button></div>
           </div>
           <div class="account-quick-card">
             <div class="account-quick-k">Auth</div>
@@ -1264,6 +1346,7 @@
           <div class="account-quick-card">
             <div class="account-quick-k">Deposit</div>
             <div class="account-quick-v mono" title="${esc(deposit)}">${esc(shortDeposit)}</div>
+            <div style="margin-top:8px;display:flex;justify-content:flex-end;"><button class="copy-btn" type="button" data-copy="${esc(deposit)}">Copy</button></div>
           </div>
           <div class="account-quick-card">
             <div class="account-quick-k">Synced</div>
@@ -1326,21 +1409,26 @@
     }
 
     function renderChart() {
-      const snapshots = (snapshotData.snapshots || []).slice().reverse();
+      const snapshots = (snapshotData.snapshots || []).slice();
       const points = snapshots
-        .filter(s => Number.isFinite(Number(s.unrealized_pnl)) || Number.isFinite(Number(s.return_pct)) || Number.isFinite(Number(s.live_account?.equity)) || Number.isFinite(Number(s.live_account?.portfolio_value)) || Number.isFinite(Number(s.live_account?.wallet_balance)))
         .map((s, idx) => {
           const live = s.live_account || {};
-          const equity = Number.isFinite(Number(live.equity)) ? Number(live.equity) : Number(live.portfolio_value ?? 0) + Number(live.wallet_balance ?? 0);
-          const y = Number.isFinite(equity) && equity > 0 ? equity : Number(s.unrealized_pnl ?? 0);
+          const equityCandidates = [live.equity, live.portfolio_value, s.equity, s.portfolio_value].map(Number).filter(n => Number.isFinite(n));
+          const equity = equityCandidates.length ? equityCandidates[0] : Number(s.unrealized_pnl ?? 0) + Number(live.wallet_balance ?? 0);
+          const pnl = Number.isFinite(Number(s.unrealized_pnl)) ? Number(s.unrealized_pnl) : Number(live.unrealized_pnl ?? 0);
+          const ret = normalizePercent(Number.isFinite(Number(s.return_pct)) ? Number(s.return_pct) : Number(live.return_pct ?? 0));
+          const open = Number.isFinite(Number(s.open_positions)) ? Number(s.open_positions) : Number(live.positions_count ?? 0);
+          if (![equity, pnl, ret, open].some(v => Number.isFinite(Number(v)))) return null;
           return {
             x: idx,
-            y,
+            equity: Number.isFinite(Number(equity)) ? Number(equity) : 0,
+            pnl: Number.isFinite(pnl) ? pnl : 0,
+            ret: Number.isFinite(ret) ? ret : 0,
+            open: Number.isFinite(open) ? open : 0,
             label: s.created_at || s.timestamp || '',
-            pct: Number(s.return_pct ?? 0),
-            open: Number(s.open_positions ?? 0),
           };
-        });
+        })
+        .filter(Boolean);
 
       const wrap = document.getElementById('chart-wrap');
       if (!points.length) {
@@ -1348,44 +1436,151 @@
         return;
       }
 
-      const width = 960;
-      const height = 250;
+      const latest = points[points.length - 1];
+      const equitySeries = points.map(p => p.equity);
+      const openSeries = points.map(p => p.open);
+      const retSeries = points.map(p => p.ret);
+      const peakEquity = Math.max(...equitySeries);
+      const minEquity = Math.min(...equitySeries);
+      let peakRun = -Infinity;
+      let maxDrawdown = 0;
+      points.forEach(p => {
+        peakRun = Math.max(peakRun, p.equity);
+        if (peakRun > 0) maxDrawdown = Math.min(maxDrawdown, (p.equity / peakRun) - 1);
+      });
+      const avgOpen = openSeries.reduce((a, b) => a + b, 0) / openSeries.length;
+      const latestFreshness = latest.label ? t(latest.label) : '—';
+      const deltaEquity = points.length > 1 ? latest.equity - points[0].equity : 0;
+      const deltaRet = points.length > 1 ? latest.ret - points[0].ret : 0;
+      const width = 980;
+      const height = 280;
       const pad = 28;
-      const minY = Math.min(...points.map(p => p.y), 0);
-      const maxY = Math.max(...points.map(p => p.y), 0);
+      const minY = Math.min(...equitySeries, 0);
+      const maxY = Math.max(...equitySeries, 0);
       const spanY = Math.max(0.0001, maxY - minY);
       const xStep = points.length > 1 ? (width - pad * 2) / (points.length - 1) : 0;
       const toX = i => pad + (points.length > 1 ? i * xStep : (width - pad * 2) / 2);
       const toY = y => height - pad - ((y - minY) / spanY) * (height - pad * 2);
-      const coords = points.map((p, i) => ({ x: toX(i).toFixed(1), y: toY(p.y).toFixed(1) }));
+      const coords = points.map((p, i) => ({ x: toX(i).toFixed(1), y: toY(p.equity).toFixed(1) }));
       const poly = coords.map(p => `${p.x},${p.y}`).join(' ');
       const area = `M ${coords[0].x} ${height - pad} L ${coords.map(p => `${p.x} ${p.y}`).join(' L ')} L ${coords[coords.length - 1].x} ${height - pad} Z`;
       const last = points[points.length - 1];
-      const svg = `
-        <svg class="chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="PnL timeline">
+
+      const activityW = 980;
+      const activityH = 160;
+      const activityPad = 20;
+      const maxOpen = Math.max(1, ...openSeries);
+      const maxAbsRet = Math.max(0.01, ...retSeries.map(v => Math.abs(v)));
+      const openStep = points.length > 1 ? (activityW - activityPad * 2) / (points.length - 1) : 0;
+      const activityCoords = points.map((p, i) => ({
+        x: activityPad + (points.length > 1 ? i * openStep : (activityW - activityPad * 2) / 2),
+        y: activityH - activityPad - ((p.open) / maxOpen) * (activityH - activityPad * 2),
+        barH: ((p.open) / maxOpen) * (activityH - activityPad * 2),
+        retY: activityH - activityPad - (((p.ret + maxAbsRet) / (maxAbsRet * 2)) * (activityH - activityPad * 2)),
+      }));
+      const retPoly = activityCoords.map(p => `${p.x.toFixed(1)},${p.retY.toFixed(1)}`).join(' ');
+
+      const equitySvg = `
+        <svg class="chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Equity timeline">
           <defs>
-            <linearGradient id="areaFill" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stop-color="rgba(99,102,241,0.24)" />
-              <stop offset="100%" stop-color="rgba(99,102,241,0.03)" />
+            <linearGradient id="equityArea" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stop-color="rgba(79,70,229,0.24)" />
+              <stop offset="100%" stop-color="rgba(79,70,229,0.03)" />
+            </linearGradient>
+            <linearGradient id="equityStroke" x1="0" x2="1" y1="0" y2="0">
+              <stop offset="0%" stop-color="#4f46e5" />
+              <stop offset="50%" stop-color="#8b5cf6" />
+              <stop offset="100%" stop-color="#38bdf8" />
             </linearGradient>
           </defs>
           <rect x="0" y="0" width="${width}" height="${height}" rx="18" fill="rgba(255,255,255,0.96)" />
-          <path d="${area}" fill="url(#areaFill)" opacity="0.85"></path>
-          <polyline points="${poly}" fill="none" stroke="rgba(99,102,241,0.95)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
-          <line x1="${pad}" y1="${toY(0).toFixed(1)}" x2="${width - pad}" y2="${toY(0).toFixed(1)}" stroke="rgba(148,163,184,0.20)" stroke-dasharray="6 6" />
-          <circle cx="${toX(points.length - 1).toFixed(1)}" cy="${toY(last.y).toFixed(1)}" r="5" fill="rgba(139,92,246,0.95)" />
-          <text x="${pad}" y="20" fill="#667085" font-size="11" letter-spacing=".12em" text-transform="uppercase">Unrealized PnL</text>
-          <text x="${pad}" y="${height - 8}" fill="#667085" font-size="11">${esc(last.label ? t(last.label) : '')}</text>
-          <text x="${width - pad}" y="20" text-anchor="end" fill="#667085" font-size="11">last: ${fmtPnL(last.y)} • ${last.open} open</text>
+          <path d="${area}" fill="url(#equityArea)" opacity="0.9"></path>
+          <polyline points="${poly}" fill="none" stroke="url(#equityStroke)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"></polyline>
+          <line x1="${pad}" y1="${toY(points[0].equity).toFixed(1)}" x2="${width - pad}" y2="${toY(points[0].equity).toFixed(1)}" stroke="rgba(148,163,184,0.14)" stroke-dasharray="4 6" />
+          <line x1="${pad}" y1="${toY(last.equity).toFixed(1)}" x2="${width - pad}" y2="${toY(last.equity).toFixed(1)}" stroke="rgba(79,70,229,0.10)" stroke-dasharray="2 6" />
+          <circle cx="${toX(points.length - 1).toFixed(1)}" cy="${toY(last.equity).toFixed(1)}" r="5.5" fill="#4f46e5" stroke="#fff" stroke-width="2" />
+          <text x="${pad}" y="19" fill="#667085" font-size="11" letter-spacing=".12em" text-transform="uppercase">Equity timeline</text>
+          <text x="${pad}" y="${height - 8}" fill="#667085" font-size="11">${esc(latestFreshness)}</text>
+          <text x="${width - pad}" y="19" text-anchor="end" fill="#667085" font-size="11">last ${money(last.equity)} • pnl ${fmtPnL(last.pnl)} • ${last.open} open</text>
         </svg>
       `;
+
+      const activitySvg = `
+        <svg class="analytics-mini-svg" viewBox="0 0 ${activityW} ${activityH}" preserveAspectRatio="none" role="img" aria-label="Open positions and return pulse">
+          <defs>
+            <linearGradient id="openBars" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stop-color="rgba(34,197,94,0.88)" />
+              <stop offset="100%" stop-color="rgba(34,197,94,0.18)" />
+            </linearGradient>
+            <linearGradient id="retLine" x1="0" x2="1" y1="0" y2="0">
+              <stop offset="0%" stop-color="#ef4444" />
+              <stop offset="50%" stop-color="#f59e0b" />
+              <stop offset="100%" stop-color="#22c55e" />
+            </linearGradient>
+          </defs>
+          <rect x="0" y="0" width="${activityW}" height="${activityH}" rx="16" fill="rgba(248,250,252,0.96)" stroke="rgba(148,163,184,0.12)" />
+          <line x1="${activityPad}" y1="${activityH - activityPad}" x2="${activityW - activityPad}" y2="${activityH - activityPad}" stroke="rgba(148,163,184,0.18)" />
+          ${activityCoords.map(p => `<rect x="${(p.x - 6).toFixed(1)}" y="${p.y.toFixed(1)}" width="12" height="${Math.max(4, p.barH).toFixed(1)}" rx="6" fill="url(#openBars)" />`).join('')}
+          <polyline points="${retPoly}" fill="none" stroke="url(#retLine)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.96"></polyline>
+          <text x="${activityPad}" y="18" fill="#667085" font-size="10" letter-spacing=".12em" text-transform="uppercase">Open positions & return pulse</text>
+        </svg>
+      `;
+
       wrap.innerHTML = `
-        <div class="chart-box">
-          <div class="chart-legend">
-            <div class="small-note">Snapshots: ${snapshots.length}</div>
-            <div class="small-note">Range: ${fmtPnL(minY)} → ${fmtPnL(maxY)}</div>
+        <div class="analytics-grid">
+          <div class="chart-box analytics-main">
+            <div class="analytics-head">
+              <div>
+                <div class="label">Analytics</div>
+                <div class="section-title" style="margin-top:4px;">
+                  <h2>Live PnL Analytics</h2>
+                </div>
+                <div class="small-note">This Week</div>
+              </div>
+              <div class="analytics-rail">
+                <span class="analytics-chip cyan">${points.length} snapshots</span>
+                <span class="analytics-chip good">${money(latest.equity)}</span>
+                <span class="analytics-chip ${latest.pnl >= 0 ? 'good' : 'bad'}">pnl ${fmtPnL(latest.pnl)}</span>
+                <span class="analytics-chip cyan">${latest.open} open</span>
+              </div>
+            </div>
+            ${equitySvg}
+            <div class="analytics-rail">
+              <span class="analytics-chip good">Peak ${money(peakEquity)}</span>
+              <span class="analytics-chip bad">Drawdown ${((maxDrawdown) * 100).toFixed(2)}%</span>
+              <span class="analytics-chip cyan">Range ${money(minEquity)} → ${money(peakEquity)}</span>
+              <span class="analytics-chip cyan">Change ${latest.pnl >= 0 ? '+' : ''}${money(deltaEquity)}</span>
+            </div>
           </div>
-          ${svg}
+          <div class="analytics-side">
+            <div class="analytics-stack">
+              <div class="analytics-card">
+                <div class="analytics-card-k">Return pulse</div>
+                <div class="analytics-card-v ${latest.ret >= 0 ? 'good' : 'bad'}">${normalizePercent(latest.ret).toFixed(2)}%</div>
+                <div class="analytics-card-sub">Latest return, compared to the first snapshot. Change ${normalizePercent(deltaRet).toFixed(2)}%.</div>
+              </div>
+              <div class="analytics-card">
+                <div class="analytics-card-k">Activity</div>
+                <div class="analytics-card-v">${avgOpen.toFixed(1)} avg open</div>
+                <div class="analytics-card-sub">Across ${points.length} snapshots, open positions hovered around ${avgOpen.toFixed(1)}.</div>
+              </div>
+              <div class="analytics-card">
+                <div class="analytics-card-k">Freshness</div>
+                <div class="analytics-card-v">${latestFreshness}</div>
+                <div class="analytics-card-sub">Latest data point available for the dashboard timeline.</div>
+              </div>
+            </div>
+            <div class="analytics-mini">
+              <div class="analytics-mini-head">
+                <div>
+                  <div class="analytics-mini-title">Exposure pulse</div>
+                  <div class="analytics-mini-note">Open positions bars + return line</div>
+                </div>
+                <div class="analytics-mini-note mono">max open ${Math.max(...openSeries)}</div>
+              </div>
+              ${activitySvg}
+            </div>
+          </div>
         </div>
       `;
     }
