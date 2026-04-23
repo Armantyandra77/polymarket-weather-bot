@@ -604,9 +604,10 @@
 
       const summary = [
         ['Status', status, statusTone],
-        ['Portfolio Value', money(portfolioValue), 'cyan'],
-        ['Cash Balance', money(cashBalance), 'good'],
-        ['Buying Power', money(buyingPower), 'amber'],
+        ['Equity', money(Number(account.equity ?? portfolioValue + cashBalance) || 0), 'cyan'],
+        ['Portfolio Value', money(portfolioValue), 'good'],
+        ['Wallet Balance', money(Number(account.wallet_balance ?? cashBalance) || 0), 'amber'],
+        ['Buying Power', money(buyingPower), 'blue'],
         ['Open Positions', account.positions_count ?? positions.length, 'good'],
         ['Open Orders', account.open_orders_count ?? 0, 'blue'],
       ];
@@ -637,7 +638,7 @@
       `;
 
       document.getElementById('account-note').textContent = account.enabled
-        ? `Sync status: ${status} • ${positions.length} position(s) • ${account.open_orders_count ?? 0} open order(s)`
+        ? `Sync status: ${status} • ${positions.length} position(s) • ${account.open_orders_count ?? 0} open order(s) • equity ${money(Number(account.equity ?? 0) || 0)}`
         : 'No live account config yet. Set wallet + credentials to enable sync.';
 
       document.getElementById('account-positions').innerHTML = positions.length ? `
@@ -685,14 +686,19 @@
     function renderChart() {
       const snapshots = (snapshotData.snapshots || []).slice().reverse();
       const points = snapshots
-        .filter(s => Number.isFinite(Number(s.unrealized_pnl)) || Number.isFinite(Number(s.return_pct)))
-        .map((s, idx) => ({
-          x: idx,
-          y: Number(s.unrealized_pnl ?? 0),
-          label: s.created_at || s.timestamp || '',
-          pct: Number(s.return_pct ?? 0),
-          open: Number(s.open_positions ?? 0),
-        }));
+        .filter(s => Number.isFinite(Number(s.unrealized_pnl)) || Number.isFinite(Number(s.return_pct)) || Number.isFinite(Number(s.live_account?.equity)) || Number.isFinite(Number(s.live_account?.portfolio_value)) || Number.isFinite(Number(s.live_account?.wallet_balance)))
+        .map((s, idx) => {
+          const live = s.live_account || {};
+          const equity = Number.isFinite(Number(live.equity)) ? Number(live.equity) : Number(live.portfolio_value ?? 0) + Number(live.wallet_balance ?? 0);
+          const y = Number.isFinite(equity) && equity > 0 ? equity : Number(s.unrealized_pnl ?? 0);
+          return {
+            x: idx,
+            y,
+            label: s.created_at || s.timestamp || '',
+            pct: Number(s.return_pct ?? 0),
+            open: Number(s.open_positions ?? 0),
+          };
+        });
 
       const wrap = document.getElementById('chart-wrap');
       if (!points.length) {

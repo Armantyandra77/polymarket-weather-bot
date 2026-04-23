@@ -74,6 +74,7 @@ The backend on the VPS stays responsible for the bot loop and `/api/state`.
 - `BOT_POLYMARKET_API_SECRET` — optional CLOB API secret
 - `BOT_POLYMARKET_API_PASSPHRASE` — optional CLOB API passphrase
 - `BOT_POLYMARKET_CLOB_HOST` — CLOB host override (default: `https://clob.polymarket.com`)
+- `BOT_POLYMARKET_RPC_URL` — Polygon RPC used to read on-chain wallet USDC balance (default: `https://polygon-bor.publicnode.com`)
 - `BOT_POLYMARKET_CHAIN_ID` — chain id used by the CLOB client (default: `137`)
 - `BOT_POLYMARKET_SIGNATURE_TYPE` — signature type for the CLOB client (default: `0`)
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import binascii
 import json
 import os
 import urllib.parse
@@ -11,6 +12,8 @@ from typing import Any, Dict, List, Optional
 DATA_API = "https://data-api.polymarket.com"
 GAMMA_API = "https://gamma-api.polymarket.com"
 CLOB_API = os.getenv("BOT_POLYMARKET_CLOB_HOST", "https://clob.polymarket.com")
+POLYGON_RPC_URL = os.getenv("BOT_POLYMARKET_RPC_URL", "https://polygon-bor.publicnode.com")
+USDC_POLYGON = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
 DEFAULT_CHAIN_ID = int(os.getenv("BOT_POLYMARKET_CHAIN_ID", "137"))
 DEFAULT_SIGNATURE_TYPE = int(os.getenv("BOT_POLYMARKET_SIGNATURE_TYPE", "0"))
 
@@ -29,6 +32,44 @@ def _get_json(url: str, params: Optional[Dict[str, Any]] = None, timeout: int = 
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
+
+
+def _hex_address(addr: str) -> str:
+    raw = addr.lower().replace('0x', '')
+    return raw.rjust(64, '0')
+
+
+def _rpc_post(url: str, method: str, params: list[Any], timeout: int = 25) -> Any:
+    payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode('utf-8')
+    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode('utf-8'))
+
+
+def _rpc_post_with_fallback(method: str, params: list[Any], timeout: int = 25) -> Any:
+    endpoints = [
+        os.getenv("BOT_POLYMARKET_RPC_URL", "https://polygon-bor.publicnode.com"),
+        "https://polygon-bor.publicnode.com",
+        "https://rpc.ankr.com/polygon",
+    ]
+    last_exc: Exception | None = None
+    for endpoint in endpoints:
+        try:
+            return _rpc_post(endpoint, method, params, timeout=timeout)
+        except Exception as exc:
+            last_exc = exc
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("RPC request failed")
+
+
+def _get_onchain_usdc_balance(wallet_address: str) -> float:
+    data = '0x70a08231000000000000000000000000' + _hex_address(wallet_address)
+    result = _rpc_post(POLYGON_RPC_URL, 'eth_call', [{"to": USDC_POLYGON, "data": data}, 'latest'])
+    value = result.get('result') if isinstance(result, dict) else None
+    if not value:
+        return 0.0
+    return int(value, 16) / 1_000_000
 
 
 @dataclass(frozen=True)
@@ -153,6 +194,8 @@ class PolymarketAccountSync:
             "positions": [],
             "positions_count": 0,
             "portfolio_value": 0.0,
+            "wallet_balance": 0.0,
+            "equity": 0.0,
             "balance": {},
             "open_orders_count": 0,
             "open_orders": [],
@@ -211,6 +254,15 @@ class PolymarketAccountSync:
                     result["portfolio_value"] = round(sum(float(p.get("current_value") or 0.0) for p in result["positions"]), 4)
                     read_only_ok = True
 
+            try:
+                wallet_balance = _get_onchain_usdc_balance(wallet_address)
+                result["wallet_balance"] = round(wallet_balance, 4)
+                result["equity"] = round(wallet_balance + result["portfolio_value"], 4)
+                read_only_ok = True
+            except Exception as exc:
+                result["warnings"].append(f"wallet balance lookup failed: {exc}")
+                result["equity"] = round(result["portfolio_value"], 4)
+
         client = self._build_client()
         if isinstance(client, dict) and client.get("error"):
             result["errors"].append(client["error"])
@@ -227,6 +279,9 @@ class PolymarketAccountSync:
                 result["balance"] = {
                     "balance": float(collateral.get("balance") or 0.0),
                     "allowance": float(collateral.get("allowance") or 0.0),
+                    "wallet_balance": float(result.get("wallet_balance") or 0.0),
+                    "portfolio_value": float(result.get("portfolio_value") or 0.0),
+                    "equity": float(result.get("equity") or 0.0),
                     "raw": collateral,
                 }
                 try:
