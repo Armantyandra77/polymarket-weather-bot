@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Dict, Optional
 
 
 @dataclass(frozen=True)
@@ -73,6 +73,10 @@ class Position:
     opened_at: str
     updated_at: str
     status: str = "open"
+    order_id: Optional[str] = None
+    source: str = "paper"
+    budget: Optional[float] = None
+    meta: Optional[Dict[str, Any]] = None
 
     @property
     def unrealized_pnl(self) -> float:
@@ -94,3 +98,7 @@ class Trade:
     reason: str
     created_at: str
     mode: str = "paper"
+    order_id: Optional[str] = None
+    status: str = "filled"
+    source: str = "paper"
+    meta: Optional[Dict[str, Any]] = None

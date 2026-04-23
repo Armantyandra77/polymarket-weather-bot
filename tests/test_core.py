@@ -4,6 +4,8 @@ from polymarket_weather_bot.models import Market, Signal, Trade
 from polymarket_weather_bot.strategy import WeatherStrategy
 from polymarket_weather_bot.store import Store
 from polymarket_weather_bot.dashboard import DashboardState
+from polymarket_weather_bot.bot import BotEngine
+from polymarket_weather_bot.executor import PolymarketLiveExecutor
 
 
 def test_parse_temperature_range_city():
@@ -203,4 +205,107 @@ def test_dashboard_state_and_controls(tmp_path):
     assert state['controls']['paused'] is True
     assert state['alerts']['enabled'] in (True, False)
     assert 'freshness_seconds' in state
+
+
+def test_bot_engine_switches_to_live_executor(monkeypatch, tmp_path):
+    monkeypatch.setenv('BOT_LIVE_ORDER_STYLE', 'market')
+    store = Store(str(tmp_path / 'bot.db'))
+    strategy = WeatherStrategy(min_volume=1000, max_spread=0.5, edge_threshold=0.01)
+    sync = PolymarketAccountSync(
+        PolymarketAccountConfig(
+            wallet_address='0x1234567890abcdef1234567890abcdef12345678',
+            private_key='0xdeadbeef',
+        ),
+        http_get=lambda *args, **kwargs: {'value': '0'},
+        client_factory=lambda config: object(),
+    )
+    engine = BotEngine(store, strategy, mode='live', account_sync=sync)
+    assert isinstance(engine.executor, PolymarketLiveExecutor)
+
+
+def test_live_executor_places_market_order_and_persists_trade(tmp_path):
+    store = Store(str(tmp_path / 'bot.db'))
+    config = PolymarketAccountConfig(
+        wallet_address='0x1234567890abcdef1234567890abcdef12345678',
+        private_key='0xdeadbeef',
+    )
+
+    class FakeBookLevel:
+        def __init__(self, price):
+            self.price = price
+
+    class FakeBook:
+        tick_size = '0.01'
+        asks = [FakeBookLevel('0.12')]
+
+    class FakeClient:
+        def get_order_book(self, token_id):
+            assert token_id == 'yes-token'
+            return FakeBook()
+
+        def calculate_market_price(self, token_id, side, amount, order_type):
+            assert token_id == 'yes-token'
+            assert side == 'BUY'
+            return 0.12
+
+        def create_market_order(self, order_args):
+            assert order_args.token_id == 'yes-token'
+            assert order_args.side == 'BUY'
+            assert order_args.amount == 5.0
+            return {'local': 'order'}
+
+        def post_order(self, order, orderType=None, post_only=False):
+            assert order == {'local': 'order'}
+            return {
+                'orderID': 'order-123',
+                'status': 'filled',
+                'avgPrice': '0.11',
+                'sizeMatched': '45.4545',
+            }
+
+        def get_orders(self, params=None, next_cursor='MA=='):
+            return []
+
+    executor = PolymarketLiveExecutor(
+        store=store,
+        config=config,
+        client_factory=lambda cfg: FakeClient(),
+    )
+    market = Market(
+        id='m1',
+        question='Will Seoul be between 17°C and 18°C on 2030-04-17?',
+        slug='seoul-weather',
+        condition_id='0xabc',
+        yes_price=0.20,
+        no_price=0.80,
+        volume=10000,
+        liquidity=5000,
+        active=True,
+        closed=False,
+        end_date='2030-04-17T00:00:00Z',
+        clob_yes_token='yes-token',
+        clob_no_token='no-token',
+    )
+    signal = Signal(
+        market_id='m1',
+        question=market.question,
+        city='Seoul',
+        date='2030-04-17',
+        market_prob=0.20,
+        model_prob=0.72,
+        edge=0.52,
+        action='BUY_YES',
+        confidence=0.9,
+        rationale='city=Seoul; edge=+52.00%',
+        generated_at='2030-04-17T00:00:00Z',
+    )
+    pos = executor.open_position(signal, 5.0, market=market)
+    assert pos is not None
+    assert pos.source == 'live'
+    assert pos.order_id == 'order-123'
+    assert pos.status == 'open'
+    trades = store.get_trades(10)
+    assert trades[0]['mode'] == 'live'
+    assert trades[0]['status'] == 'filled'
+    assert trades[0]['order_id'] == 'order-123'
 

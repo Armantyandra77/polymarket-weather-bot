@@ -63,7 +63,12 @@ The backend on the VPS stays responsible for the bot loop and `/api/state`.
 - `BOT_MAX_SPREAD` — maximum spread to consider (default: `0.08`)
 - `BOT_EDGE_THRESHOLD` — minimum edge to enter (default: `0.10`)
 - `BOT_MAX_POSITIONS` — max open positions (default: `3`)
-- `BOT_MODE` — `paper` (default) or `live` stub
+- `BOT_MODE` — `paper` (default) or `live` for live CLOB execution
+- `BOT_LIVE_ORDER_STYLE` — `market` (default) or `limit`
+- `BOT_LIVE_MIN_ORDER_USD` — skip live entries below this size (default: `1`)
+- `BOT_LIVE_MAX_ORDER_USD` — cap each live entry size in USD (default: `25`)
+- `BOT_LIVE_POST_ONLY` — when `BOT_LIVE_ORDER_STYLE=limit`, use post-only maker orders (`0`/`1`)
+- `BOT_LIVE_LIMIT_BUFFER_BPS` — optional price buffer for limit orders in basis points (default: `0`)
 - `BOT_SERVE_UI` — `1` (default) serves local HTML from the backend, `0` makes the backend API-only
 - `BOT_TELEGRAM_BOT_TOKEN` — optional Telegram bot token for alerts
 - `BOT_TELEGRAM_CHAT_ID` — optional Telegram chat id for alerts

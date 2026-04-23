@@ -6,8 +6,9 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from .models import Market, Position, Signal, Trade
 from .account import PolymarketAccountSync
+from .executor import PolymarketLiveExecutor
+from .models import Market, Position, Signal, Trade
 from .notifier import TelegramNotifier
 from .strategy import WeatherStrategy
 from .store import Store
@@ -18,7 +19,7 @@ class PaperExecutor:
         self.store = store
         self.bankroll = bankroll
 
-    def open_position(self, signal: Signal, quantity: float) -> Position:
+    def open_position(self, signal: Signal, quantity: float, market: Optional[Market] = None) -> Position:
         now = datetime.now(timezone.utc).isoformat()
         side = "YES" if signal.action == "BUY_YES" else "NO"
         avg_entry = signal.market_prob
@@ -34,6 +35,7 @@ class PaperExecutor:
             model_prob=signal.model_prob,
             opened_at=now,
             updated_at=now,
+            source="paper",
         )
         self.store.save_position(pos)
         self.store.save_trade(
@@ -45,6 +47,8 @@ class PaperExecutor:
                 reason=signal.rationale,
                 created_at=now,
                 mode="paper",
+                status="filled",
+                source="paper",
             )
         )
         return pos
@@ -66,6 +70,10 @@ class PaperExecutor:
                 opened_at=p["opened_at"],
                 updated_at=datetime.now(timezone.utc).isoformat(),
                 status=p.get("status", "open"),
+                order_id=p.get("order_id"),
+                source=p.get("source", "paper"),
+                budget=p.get("budget"),
+                meta=p.get("meta"),
             )
             self.store.save_position(updated)
             return updated
@@ -84,11 +92,14 @@ class BotEngine:
     ):
         self.store = store
         self.strategy = strategy
-        self.mode = mode
-        self.executor = PaperExecutor(store, bankroll=bankroll)
+        self.mode = mode.strip().lower()
         self.bankroll = bankroll
         self.notifier = notifier or TelegramNotifier.from_env()
         self.account_sync = account_sync
+        if self.mode == "live" and account_sync is not None:
+            self.executor = PolymarketLiveExecutor.from_env(store, account_sync.config)
+        else:
+            self.executor = PaperExecutor(store, bankroll=bankroll)
 
     def scan_and_trade(self, markets: List[Market]) -> Dict[str, Any]:
         self.store.upsert_markets(markets)
@@ -109,7 +120,9 @@ class BotEngine:
                 if self.strategy.should_enter(signal, open_positions):
                     qty = self.strategy.recommended_size(signal, bankroll=self.bankroll)
                     if qty > 0:
-                        pos = self.executor.open_position(signal, qty)
+                        pos = self.executor.open_position(signal, qty, market=market)
+                        if pos is None:
+                            continue
                         open_positions += 1
                         self.store.save_snapshot({"event": "opened_position", "position": asdict(pos)})
                         try:
