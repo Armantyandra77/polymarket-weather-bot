@@ -80,7 +80,9 @@
     .nav-ico { width: 28px; height: 28px; border-radius: 10px; display: grid; place-items: center; background: #f8fafc; color: #6366f1; }
     .nav-badge { min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; background: #ffe4ec; color: #e11d48; }
     .main { min-width: 0; }
-    .page[hidden] { display: none !important; }
+    .page { transition: opacity 180ms ease, transform 180ms ease; will-change: opacity, transform; }
+    .page.is-visible { opacity: 1; transform: translateY(0); }
+    .page[hidden], .notif-panel[hidden] { display: none !important; }
     .notif-panel {
       margin: 0 18px 10px;
       padding: 14px;
@@ -95,6 +97,9 @@
     .notif-title { font-weight: 700; color: #101828; }
     .notif-list { display: grid; gap: 8px; }
     .notif-item { padding: 10px 12px; border-radius: 14px; background: #f8fafc; border: 1px solid rgba(148,163,184,0.16); color: #344054; font-size: 13px; line-height: 1.45; }
+    .notif-item.error { border-color: rgba(239,68,68,0.22); background: rgba(254,226,226,0.9); }
+    .notif-item.signal { border-color: rgba(59,130,246,0.18); background: rgba(239,246,255,0.96); }
+    .notif-item.trade { border-color: rgba(16,185,129,0.18); background: rgba(236,253,245,0.96); }
     .lang-btn.active { background: #eef2ff; color: #4f46e5; border-color: rgba(99,102,241,0.22); }
     .topbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 4px 10px 4px; margin: 0 18px 4px; }
     .topbar-left, .topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -108,17 +113,19 @@
       margin: 0 18px 12px; padding: 12px 16px; border-radius: 18px; border: 1px solid rgba(148,163,184,0.18);
       background: rgba(255,255,255,0.78); box-shadow: 0 10px 24px rgba(15,23,42,0.05); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
     }
+    .pagebar-breadcrumb { color: #667085; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em; margin-bottom: 4px; }
     .pagebar-title { font-size: 15px; font-weight: 750; color: #101828; }
     .pagebar-note { color: var(--muted); font-size: 13px; margin-top: 3px; }
     .pagebar-meta { color: #667085; font-size: 12px; }
     .search {
       min-width: 280px; height: 40px; padding: 0 14px; border-radius: 12px; border: 1px solid rgba(148,163,184,0.16);
-      background: rgba(255,255,255,0.82); color: #101828; outline: none;
+      background: rgba(255,255,255,0.80); color: #101828; outline: none;
     }
     .search::placeholder { color: #98a2b3; }
+    .card.search-hit { border-color: rgba(79,70,229,0.24); box-shadow: 0 12px 28px rgba(79,70,229,0.08); }
     @media (max-width: 1200px) { .app { grid-template-columns: 1fr; } .sidebar { height: auto; position: relative; border-right: 0; border-bottom: 1px solid rgba(148,163,184,0.20); } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .metric:first-child { grid-column: span 2; } .panel-grid { grid-template-columns: 1fr; } .account-grid { grid-template-columns: 1fr; } .account-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-    @media (max-width: 720px) { .shell { padding: 16px 12px 24px; } .topbar { margin: 0 0 6px; padding: 12px 2px 8px; } .search { min-width: 0; width: 100%; } .hero-main { padding: 18px; } .grid { grid-template-columns: 1fr; } .metric:first-child { grid-column: span 1; } .hero-side { padding: 12px; } .stat-value { font-size: 26px; } .section-title h2 { font-size: 18px; } .mini-kpis, .status-grid { grid-template-columns: 1fr; } .account-grid, .account-summary { grid-template-columns: 1fr; } table { min-width: 760px; } }
-    .hero { display: grid; grid-template-columns: 1.55fr 0.95fr; gap: 14px; align-items: stretch; margin-bottom: 16px; }
+    @media (max-width: 720px) { .shell { padding: 16px 12px 24px; } .sidebar { padding: 16px 12px; } .sidebar-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; } .nav-item { padding: 9px 10px; font-size: 13px; } .nav-section { grid-column: 1 / -1; } .topbar { margin: 0 0 6px; padding: 12px 2px 8px; flex-direction: column; align-items: stretch; } .topbar-right { width: 100%; } .search { min-width: 0; width: 100%; } .pagebar, .notif-panel { margin-left: 0; margin-right: 0; } .hero-main { padding: 18px; } .grid { grid-template-columns: 1fr; } .metric:first-child { grid-column: span 1; } .hero-side { padding: 12px; } .stat-value { font-size: 26px; } .section-title h2 { font-size: 18px; } .mini-kpis, .status-grid { grid-template-columns: 1fr; } .account-grid, .account-summary { grid-template-columns: 1fr; } table { min-width: 760px; } }
+
     .hero-main, .hero-side, .card, .chart-box {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -385,6 +392,7 @@
 
       <div class="pagebar" id="pagebar">
         <div>
+          <div class="pagebar-breadcrumb" id="pagebar-breadcrumb">Home / Dashboard</div>
           <div class="pagebar-title" id="pagebar-title">Dashboard</div>
           <div class="pagebar-note" id="pagebar-note">Overview of live positions, signals, and account sync.</div>
         </div>
@@ -602,6 +610,7 @@
       en: {
         langLabel: 'English',
         sidebarSub: 'Live trading monitor',
+        homeLabel: 'Home',
         dashboard: 'Dashboard',
         signals: 'Signals',
         positions: 'Positions',
@@ -658,6 +667,7 @@
       id: {
         langLabel: 'Bahasa Indonesia',
         sidebarSub: 'Monitor trading live',
+        homeLabel: 'Beranda',
         dashboard: 'Dasbor',
         signals: 'Sinyal',
         positions: 'Posisi',
@@ -722,6 +732,8 @@
     }
 
     function updatePagebar(view = currentView, visibleCount = null) {
+      const home = COPY[currentLang]?.homeLabel || 'Home';
+      setText('pagebar-breadcrumb', `${home} / ${pageTitle(view)}`);
       setText('pagebar-title', pageTitle(view));
       setText('pagebar-note', pageNote(view));
       if (visibleCount !== null) {
@@ -843,17 +855,33 @@
       updatePagebar(currentView, visibleCardCount(currentView));
     }
 
+    function setPageVisibility(page, visible) {
+      if (!page) return;
+      clearTimeout(page.__hideTimer);
+      if (visible) {
+        page.hidden = false;
+        page.classList.remove('is-visible');
+        requestAnimationFrame(() => page.classList.add('is-visible'));
+      } else {
+        page.classList.remove('is-visible');
+        page.__hideTimer = setTimeout(() => {
+          if (!page.classList.contains('is-visible')) page.hidden = true;
+        }, 180);
+      }
+    }
+
     function setView(view, push = true) {
       const next = ['dashboard', 'signals', 'positions', 'trades', 'account', 'analytics', 'settings', 'helps'].includes(view) ? view : 'dashboard';
       currentView = next;
       const pages = getPages();
       pages.forEach(page => {
-        page.hidden = page.dataset.page !== next;
+        setPageVisibility(page, page.dataset.page === next);
       });
       navItems.forEach(item => item.classList.toggle('active', item.dataset.view === next));
       if (push && location.hash.replace('#', '') !== next) {
         location.hash = next;
       }
+      toggleNotifications(false);
       window.scrollTo(0, 0);
       updatePagebar(next);
       applySearch();
@@ -883,11 +911,13 @@
       cards.forEach(card => {
         if (!q) {
           card.hidden = false;
+          card.classList.remove('search-hit');
           matches += 1;
           return;
         }
         const text = card.innerText.toLowerCase();
         card.hidden = !text.includes(q);
+        card.classList.toggle('search-hit', !card.hidden);
         if (!card.hidden) matches += 1;
       });
       updatePagebar(currentView, matches);
@@ -896,6 +926,8 @@
     function toggleNotifications(force) {
       const next = typeof force === 'boolean' ? force : notifPanel.hidden;
       notifPanel.hidden = !next;
+      notifPanel.classList.toggle('is-open', next);
+      notifBtn.setAttribute('aria-expanded', next ? 'true' : 'false');
       if (next) renderNotifications();
     }
 
@@ -930,12 +962,12 @@
       searchInput.addEventListener('input', () => applySearch());
       window.addEventListener('hashchange', () => setView(readHashView(), false));
       document.addEventListener('click', (event) => {
-        if (!notifPanel.hidden && !notifPanel.contains(event.target) && event.target !== notifBtn) {
-          notifPanel.hidden = true;
+        if (!notifPanel.hidden && !notifPanel.contains(event.target) && !notifBtn.contains(event.target)) {
+          toggleNotifications(false);
         }
       });
       document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') notifPanel.hidden = true;
+        if (event.key === 'Escape') toggleNotifications(false);
       });
     }
 
