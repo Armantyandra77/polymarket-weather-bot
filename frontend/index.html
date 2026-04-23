@@ -295,11 +295,23 @@
     .account-stat { padding: 14px; border-radius: 16px; background: #ffffff; border: 1px solid rgba(148,163,184,0.18); }
     .account-stat .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 6px; }
     .account-stat .v { font-size: 20px; font-weight: 700; color: #101828; }
-    .account-profile { padding: 16px; border-radius: 18px; background: #ffffff; border: 1px solid rgba(148,163,184,0.18); display: grid; gap: 10px; }
+    .account-profile { padding: 16px; border-radius: 18px; background: #ffffff; border: 1px solid rgba(148,163,184,0.18); display: grid; gap: 12px; }
     .account-profile-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
     .account-name { font-size: 18px; font-weight: 700; letter-spacing: -0.03em; color: #101828; }
     .account-wallet { color: var(--muted); font-size: 12px; line-height: 1.45; word-break: break-all; }
-    .account-meta { display: flex; flex-wrap: wrap; gap: 8px; }
+    .account-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .account-chip {
+      padding: 10px 12px; border-radius: 14px; border: 1px solid rgba(148,163,184,0.16); background: #f8fafc;
+      display: grid; gap: 4px; min-width: 0;
+    }
+    .account-chip-k { font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: #98a2b3; font-weight: 700; }
+    .account-chip-v { font-size: 12px; color: #101828; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .account-quick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .account-quick-card {
+      border-radius: 16px; padding: 12px; border: 1px solid rgba(148,163,184,0.16); background: linear-gradient(180deg, rgba(248,250,252,0.96), rgba(255,255,255,0.96));
+    }
+    .account-quick-k { color: #98a2b3; font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; font-weight: 700; }
+    .account-quick-v { margin-top: 6px; font-size: 13px; color: #101828; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .account-note { color: var(--muted); font-size: 13px; line-height: 1.5; }
     .account-table-wrap { margin-top: 12px; overflow-x: auto; border-radius: 18px; border: 1px solid rgba(148,163,184,0.18); background: #ffffff; }
     .account-table { width: 100%; border-collapse: collapse; min-width: 900px; table-layout: fixed; }
@@ -786,6 +798,13 @@
       return `${n >= 0 ? '+' : ''}${n.toFixed(3)}`;
     }
 
+    function shortId(value, head = 6, tail = 4) {
+      const s = String(value ?? '').trim();
+      if (!s || s === '—') return '—';
+      if (s.length <= head + tail + 3) return s;
+      return `${s.slice(0, head)}…${s.slice(-tail)}`;
+    }
+
     function t(v) {
       if (!v) return '—';
       const d = new Date(v);
@@ -1199,15 +1218,21 @@
       const buyingPower = Number(balance.allowance ?? 0) || 0;
       const cashBalance = Number(balance.balance ?? 0) || 0;
       const portfolioValue = Number(account.portfolio_value ?? 0) || 0;
+      const equity = Number(account.equity ?? portfolioValue + cashBalance) || 0;
+      const positionsCount = account.positions_count ?? positions.length;
+      const openOrders = account.open_orders_count ?? 0;
+      const shortWallet = shortId(wallet);
+      const shortProxy = shortId(proxy);
+      const shortDeposit = shortId(deposit);
 
       const summary = [
         ['Status', status, statusTone],
-        ['Equity', money(Number(account.equity ?? portfolioValue + cashBalance) || 0), 'cyan'],
+        ['Equity', money(equity), 'cyan'],
         ['Portfolio Value', money(portfolioValue), 'good'],
         ['Wallet Balance', money(Number(account.wallet_balance ?? cashBalance) || 0), 'amber'],
         ['Buying Power', money(buyingPower), 'blue'],
-        ['Open Positions', account.positions_count ?? positions.length, 'good'],
-        ['Open Orders', account.open_orders_count ?? 0, 'blue'],
+        ['Open Positions', positionsCount, 'good'],
+        ['Open Orders', openOrders, 'blue'],
       ];
 
       document.getElementById('account-summary').innerHTML = summary.map(([label, value, tone]) => `
@@ -1223,22 +1248,39 @@
         <div class="account-profile-top">
           <div>
             <div class="account-name">${esc(name)}</div>
-            <div class="account-wallet mono">${esc(wallet)}</div>
+            <div class="account-wallet mono" title="${esc(wallet)}">${esc(shortWallet)}</div>
           </div>
-          <div class="pill mono ${statusTone}">${esc(status)}</div>
+          <div class="pill mono ${statusTone}" title="Sync status">${esc(status)}</div>
+        </div>
+        <div class="account-quick">
+          <div class="account-quick-card">
+            <div class="account-quick-k">Proxy</div>
+            <div class="account-quick-v mono" title="${esc(proxy)}">${esc(shortProxy)}</div>
+          </div>
+          <div class="account-quick-card">
+            <div class="account-quick-k">Auth</div>
+            <div class="account-quick-v mono">${esc(authType)}</div>
+          </div>
+          <div class="account-quick-card">
+            <div class="account-quick-k">Deposit</div>
+            <div class="account-quick-v mono" title="${esc(deposit)}">${esc(shortDeposit)}</div>
+          </div>
+          <div class="account-quick-card">
+            <div class="account-quick-k">Synced</div>
+            <div class="account-quick-v mono" title="${esc(synced)}">${esc(synced)}</div>
+          </div>
         </div>
         <div class="account-meta">
-          ${profile.x_username ? `<div class="chip"><strong>X</strong> <span>@${esc(profile.x_username)}</span></div>` : ''}
-          <div class="chip"><strong>Proxy</strong> <span class="mono">${esc(proxy)}</span></div>
-          <div class="chip"><strong>Auth</strong> <span class="mono">${esc(authType)}</span></div>
-          <div class="chip"><strong>Deposit</strong> <span class="mono">${esc(deposit)}</span></div>
-          <div class="chip"><strong>Synced</strong> <span class="mono">${esc(synced)}</span></div>
+          ${profile.x_username ? `<div class="account-chip"><div class="account-chip-k">X</div><div class="account-chip-v mono">@${esc(profile.x_username)}</div></div>` : ''}
+          <div class="account-chip"><div class="account-chip-k">Wallet</div><div class="account-chip-v mono" title="${esc(wallet)}">${esc(shortWallet)}</div></div>
+          <div class="account-chip"><div class="account-chip-k">Proxy</div><div class="account-chip-v mono" title="${esc(proxy)}">${esc(shortProxy)}</div></div>
+          <div class="account-chip"><div class="account-chip-k">Deposit</div><div class="account-chip-v mono" title="${esc(deposit)}">${esc(shortDeposit)}</div></div>
         </div>
         <div class="account-note">${warnings.length ? `Warnings: ${warnings.map(esc).join(' • ')}` : 'Live account sync aktif dan siap dipantau.'}${errors.length ? `<br/>Errors: ${errors.map(esc).join(' • ')}` : ''}</div>
       `;
 
       document.getElementById('account-note').textContent = account.enabled
-        ? `Sync status: ${status} • ${positions.length} position(s) • ${account.open_orders_count ?? 0} open order(s) • equity ${money(Number(account.equity ?? 0) || 0)} • auth ${authType}`
+        ? `Sync status: ${status} • ${positionsCount} position(s) • ${openOrders} open order(s) • equity ${money(equity)} • auth ${authType}`
         : 'No live account config yet. Set wallet/proxy/session + credentials to enable sync.';
 
       document.getElementById('account-positions').innerHTML = positions.length ? `
