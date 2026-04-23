@@ -3,26 +3,26 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Noise-filtered Polymarket weather bot with dashboard</title>
+  <title>Polymarket Weather Bot</title>
   <style>
     :root {
-      --bg: #0a1220;
-      --bg2: #111b2d;
-      --bg3: #0e1726;
-      --panel: rgba(16, 24, 39, 0.86);
-      --panel-strong: rgba(20, 29, 48, 0.94);
-      --line: rgba(148, 163, 184, 0.20);
-      --line-soft: rgba(148, 163, 184, 0.14);
-      --text: #f8fbff;
-      --muted: #9aa8bb;
-      --good: #22c55e;
-      --bad: #fb7185;
-      --cyan: #38bdf8;
-      --blue: #7c9cff;
-      --amber: #f6b73c;
-      --violet: #a78bfa;
-      --rose: #f97392;
-      --shadow: 0 20px 60px rgba(2, 6, 23, 0.32);
+      --bg: #f4f7fb;
+      --bg2: #eef2f8;
+      --bg3: #e8edf6;
+      --panel: rgba(255, 255, 255, 0.92);
+      --panel-strong: rgba(255, 255, 255, 0.98);
+      --line: rgba(148, 163, 184, 0.24);
+      --line-soft: rgba(148, 163, 184, 0.16);
+      --text: #111827;
+      --muted: #667085;
+      --good: #16a34a;
+      --bad: #e11d48;
+      --cyan: #0ea5e9;
+      --blue: #6366f1;
+      --amber: #d97706;
+      --violet: #8b5cf6;
+      --rose: #f43f5e;
+      --shadow: 0 16px 36px rgba(15, 23, 42, 0.08);
       --radius: 22px;
     }
 
@@ -32,9 +32,9 @@
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       color: var(--text);
       background:
-        radial-gradient(circle at top left, rgba(124, 156, 255, 0.16), transparent 24%),
-        radial-gradient(circle at top right, rgba(56, 189, 248, 0.12), transparent 20%),
-        radial-gradient(circle at bottom left, rgba(167, 139, 250, 0.09), transparent 18%),
+        radial-gradient(circle at top left, rgba(99, 102, 241, 0.12), transparent 24%),
+        radial-gradient(circle at top right, rgba(14, 165, 233, 0.10), transparent 20%),
+        radial-gradient(circle at bottom left, rgba(139, 92, 246, 0.08), transparent 18%),
         linear-gradient(180deg, var(--bg) 0%, var(--bg2) 56%, var(--bg3) 100%);
     }
 
@@ -44,11 +44,55 @@
       inset: 0;
       pointer-events: none;
       background:
-        linear-gradient(180deg, rgba(255,255,255,0.025), transparent 20%, transparent 82%, rgba(255,255,255,0.02)),
-        linear-gradient(90deg, rgba(255,255,255,0.02), transparent 16%, transparent 84%, rgba(255,255,255,0.02));
+        linear-gradient(180deg, rgba(255,255,255,0.42), transparent 18%, transparent 82%, rgba(255,255,255,0.22)),
+        linear-gradient(90deg, rgba(255,255,255,0.20), transparent 16%, transparent 84%, rgba(255,255,255,0.20));
     }
 
-    .shell { max-width: 1360px; margin: 0 auto; padding: 24px 18px 32px; }
+    .app { display: grid; grid-template-columns: 270px minmax(0, 1fr); min-height: 100vh; }
+    .sidebar {
+      padding: 22px 18px;
+      border-right: 1px solid rgba(148,163,184,0.20);
+      background: rgba(255,255,255,0.58);
+      backdrop-filter: blur(16px);
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .sidebar-brand-row { display: flex; gap: 12px; align-items: center; }
+    .sidebar-logo {
+      width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center; font-weight: 800; letter-spacing: -0.04em;
+      color: #fff; background: linear-gradient(135deg, #ef5da8 0%, #8b5cf6 45%, #4f46e5 100%); box-shadow: 0 12px 24px rgba(99,102,241,0.20);
+    }
+    .sidebar-title { font-weight: 800; color: #101828; line-height: 1.1; }
+    .sidebar-sub { color: var(--muted); font-size: 12px; margin-top: 3px; }
+    .sidebar-nav { display: grid; gap: 8px; margin-top: 2px; }
+    .nav-section { margin-top: 14px; color: #98a2b3; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; padding: 0 8px; }
+    .nav-item {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 14px;
+      color: #344054; border: 1px solid transparent; text-decoration: none; background: transparent;
+    }
+    .nav-item.active { background: #eef2ff; color: #4f46e5; border-color: rgba(99,102,241,0.14); box-shadow: inset 0 1px 0 rgba(255,255,255,0.8); }
+    .nav-item:hover { background: #f8fafc; }
+    .nav-left { display: flex; align-items: center; gap: 10px; }
+    .nav-ico { width: 28px; height: 28px; border-radius: 10px; display: grid; place-items: center; background: #f8fafc; color: #6366f1; }
+    .nav-badge { min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; background: #ffe4ec; color: #e11d48; }
+    .main { min-width: 0; }
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 4px 10px 4px; margin: 0 18px 4px;
+    }
+    .topbar-left, .topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .lang { color: #344054; font-size: 13px; padding: 6px 10px; border-radius: 12px; border: 1px solid rgba(148,163,184,0.16); background: rgba(255,255,255,0.72); }
+    .icon-btn { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; border: 1px solid rgba(148,163,184,0.16); background: rgba(255,255,255,0.72); color: #475467; }
+    .search {
+      min-width: 280px; height: 40px; padding: 0 14px; border-radius: 12px; border: 1px solid rgba(148,163,184,0.16);
+      background: rgba(255,255,255,0.82); color: #101828; outline: none;
+    }
+    .search::placeholder { color: #98a2b3; }
+    @media (max-width: 1200px) { .app { grid-template-columns: 1fr; } .sidebar { height: auto; position: relative; border-right: 0; border-bottom: 1px solid rgba(148,163,184,0.20); } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .metric:first-child { grid-column: span 2; } .panel-grid { grid-template-columns: 1fr; } .account-grid { grid-template-columns: 1fr; } .account-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 720px) { .shell { padding: 16px 12px 24px; } .topbar { margin: 0 0 6px; padding: 12px 2px 8px; } .search { min-width: 0; width: 100%; } .hero-main { padding: 18px; } .grid { grid-template-columns: 1fr; } .metric:first-child { grid-column: span 1; } .hero-side { padding: 12px; } .stat-value { font-size: 26px; } .section-title h2 { font-size: 18px; } .mini-kpis, .status-grid { grid-template-columns: 1fr; } .account-grid, .account-summary { grid-template-columns: 1fr; } table { min-width: 760px; } }
     .hero { display: grid; grid-template-columns: 1.55fr 0.95fr; gap: 14px; align-items: stretch; margin-bottom: 16px; }
     .hero-main, .hero-side, .card, .chart-box {
       background: var(--panel);
@@ -83,10 +127,11 @@
     .chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
     .chip {
       display: inline-flex; align-items: center; gap: 8px; padding: 8px 11px; border-radius: 999px; font-size: 12px;
-      letter-spacing: 0.01em; color: #d7def0; background: rgba(255,255,255,0.035);
-      border: 1px solid rgba(255,255,255,0.10);
+      letter-spacing: 0.01em; color: #344054; background: rgba(255,255,255,0.82);
+      border: 1px solid rgba(148,163,184,0.18);
+      box-shadow: 0 1px 0 rgba(255,255,255,0.8) inset;
     }
-    .chip strong { color: #f8fbff; font-weight: 650; }
+    .chip strong { color: #101828; font-weight: 700; }
     .hero-side { padding: 14px; display: grid; gap: 12px; }
     .stat-hero {
       padding: 18px; border-radius: 18px; background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.025));
@@ -108,10 +153,10 @@
     .stat-value { font-size: 30px; font-weight: 760; letter-spacing: -0.04em; }
     .stat-sub { color: var(--muted); font-size: 13px; margin-top: 5px; line-height: 1.45; }
     .live-dot {
-      display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: #d7def0;
-      padding: 8px 11px; border-radius: 999px; background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.10);
+      display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: #344054;
+      padding: 8px 11px; border-radius: 999px; background: rgba(255,255,255,0.82); border: 1px solid rgba(148,163,184,0.18);
     }
-    .live-dot::before { content: ""; width: 8px; height: 8px; border-radius: 999px; background: var(--good); box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.14); }
+    .live-dot::before { content: ""; width: 8px; height: 8px; border-radius: 999px; background: var(--good); box-shadow: 0 0 0 6px rgba(22, 163, 74, 0.12); }
     .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 14px 0 18px; }
     .card { padding: 16px; }
     .metric { min-height: 112px; position: relative; overflow: hidden; }
@@ -125,11 +170,11 @@
     .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.18em; }
     .section-title h2 { margin: 0; font-size: 19px; letter-spacing: -0.03em; font-weight: 700; }
     .small-note { color: var(--muted); font-size: 13px; line-height: 1.5; }
-    .table-wrap { overflow-x: auto; border-radius: 18px; border: 1px solid rgba(255,255,255,0.07); background: rgba(255,255,255,0.02); }
+    .table-wrap { overflow-x: auto; border-radius: 18px; border: 1px solid rgba(148,163,184,0.18); background: #ffffff; }
     table { width: 100%; border-collapse: collapse; min-width: 880px; table-layout: fixed; }
-    th, td { padding: 15px 12px; border-bottom: 1px solid rgba(255,255,255,0.06); vertical-align: top; text-align: left; }
-    th { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.14em; background: rgba(255,255,255,0.025); position: sticky; top: 0; z-index: 1; }
-    tbody tr:hover td { background: rgba(255,255,255,0.02); }
+    th, td { padding: 15px 12px; border-bottom: 1px solid rgba(148,163,184,0.12); vertical-align: top; text-align: left; }
+    th { font-size: 11px; color: #667085; text-transform: uppercase; letter-spacing: 0.14em; background: #f8fafc; position: sticky; top: 0; z-index: 1; }
+    tbody tr:hover td { background: #f8fafc; }
     td:first-child { width: 48%; }
     td:nth-child(2) { width: 9%; }
     td:nth-child(3) { width: 8%; }
@@ -149,9 +194,9 @@
     .pnl-badge.bad { background: linear-gradient(180deg, rgba(251, 113, 133, 0.20), rgba(251, 113, 133, 0.12)); border-color: rgba(251, 113, 133, 0.28); color: #ffe3e8; box-shadow: 0 0 0 1px rgba(251, 113, 133, 0.05) inset; }
     .muted { color: var(--muted); } .mono { font-variant-numeric: tabular-nums; }
     .list { display: grid; gap: 10px; }
-    .signal-card { display: grid; gap: 10px; padding: 16px; border-radius: 18px; background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.07); box-shadow: inset 2px 0 0 rgba(103, 232, 249, 0.12); }
+    .signal-card { display: grid; gap: 10px; padding: 16px; border-radius: 18px; background: #ffffff; border: 1px solid rgba(148,163,184,0.18); box-shadow: inset 2px 0 0 rgba(99, 102, 241, 0.10); }
     .signal-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-    .signal-title { font-weight: 700; font-size: 15px; line-height: 1.45; max-width: 100%; }
+    .signal-title { font-weight: 700; font-size: 15px; line-height: 1.45; max-width: 100%; color: #101828; }
     .signal-meta { color: var(--muted); font-size: 13px; line-height: 1.6; }
     .trade-card { box-shadow: inset 2px 0 0 rgba(124, 156, 255, 0.16); }
     .trade-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
@@ -167,62 +212,63 @@
     .trade-badge.unknown { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.22); color: #eef3fb; }
     .edgebar { height: 7px; border-radius: 999px; background: rgba(255,255,255,0.06); overflow: hidden; }
     .edgebar > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, rgba(96, 165, 250, 0.95), rgba(103, 232, 249, 0.95), rgba(39, 194, 106, 0.95)); }
-    .footer { margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.06); color: var(--muted); font-size: 12px; line-height: 1.6; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-    .footer code { background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 6px; color: #eef5ff; }
-    .empty { padding: 18px; border-radius: 18px; background: rgba(255,255,255,0.025); border: 1px dashed rgba(255,255,255,0.10); color: var(--muted); }
-    .error-banner { display: none; margin-top: 14px; padding: 14px 16px; border-radius: 16px; background: rgba(255, 107, 122, 0.10); border: 1px solid rgba(255, 107, 122, 0.18); color: #ffd9de; white-space: pre-wrap; }
+    .footer { margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(148,163,184,0.18); color: var(--muted); font-size: 12px; line-height: 1.6; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .footer code { background: #eef2ff; padding: 2px 6px; border-radius: 6px; color: #3730a3; }
+    .empty { padding: 18px; border-radius: 18px; background: #f8fafc; border: 1px dashed rgba(148,163,184,0.28); color: var(--muted); }
+    .error-banner { display: none; margin-top: 14px; padding: 14px 16px; border-radius: 16px; background: rgba(255, 107, 122, 0.10); border: 1px solid rgba(255, 107, 122, 0.18); color: #b42318; white-space: pre-wrap; }
     .panel-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 14px; }
     .chart-box { padding: 16px; }
     .chart-legend { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
     .chart { width: 100%; height: 250px; display: block; }
     .controls { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
     .btn {
-      appearance: none; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); color: #eef5ff;
+      appearance: none; border: 1px solid rgba(148,163,184,0.20); background: #ffffff; color: #111827;
       padding: 10px 13px; border-radius: 13px; cursor: pointer; font-weight: 600; letter-spacing: 0.01em;
-      transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+      transition: transform 120ms ease, border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+      box-shadow: 0 1px 0 rgba(255,255,255,0.9) inset;
     }
-    .btn:hover { border-color: rgba(103, 232, 249, 0.32); background: rgba(255,255,255,0.045); transform: translateY(-1px); }
-    .btn-primary { background: rgba(103, 232, 249, 0.10); }
-    .btn-good { background: rgba(39, 194, 106, 0.10); }
-    .btn-danger { background: rgba(255, 107, 122, 0.10); }
-    .btn.active { outline: 2px solid rgba(103, 232, 249, 0.35); }
+    .btn:hover { border-color: rgba(99, 102, 241, 0.28); background: #f8fafc; transform: translateY(-1px); }
+    .btn-primary { background: rgba(99, 102, 241, 0.08); }
+    .btn-good { background: rgba(22, 163, 74, 0.08); }
+    .btn-danger { background: rgba(225, 29, 72, 0.08); }
+    .btn.active { outline: 2px solid rgba(99, 102, 241, 0.25); }
     .mini-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-    .mini { padding: 14px; border-radius: 16px; background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.07); }
+    .mini { padding: 14px; border-radius: 16px; background: #ffffff; border: 1px solid rgba(148,163,184,0.18); }
     .mini .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 6px; }
-    .mini .v { font-size: 20px; font-weight: 700; }
+    .mini .v { font-size: 20px; font-weight: 700; color: #101828; }
     .journal { display: grid; gap: 10px; }
-    .journal-item { padding: 14px; border-radius: 16px; background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.07); }
+    .journal-item { padding: 14px; border-radius: 16px; background: #ffffff; border: 1px solid rgba(148,163,184,0.18); }
     .journal-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
-    .journal-title { font-weight: 700; }
+    .journal-title { font-weight: 700; color: #101828; }
     .journal-detail { color: var(--muted); font-size: 13px; line-height: 1.6; }
-    .journal-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); }
+    .journal-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; border: 1px solid rgba(148,163,184,0.16); background: #f8fafc; color: #344054; }
     .journal-pill.trade { background: rgba(39, 194, 106, 0.10); }
     .journal-pill.signal { background: rgba(103, 232, 249, 0.10); }
     .journal-pill.error { background: rgba(255, 107, 122, 0.10); }
     .control-panel { display: grid; gap: 12px; }
     .control-note { color: var(--muted); font-size: 13px; line-height: 1.5; }
     .status-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-    .status-chip { padding: 12px; border-radius: 16px; background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.07); }
+    .status-chip { padding: 12px; border-radius: 16px; background: #ffffff; border: 1px solid rgba(148,163,184,0.18); }
     .status-chip .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; }
-    .status-chip .v { font-size: 17px; font-weight: 700; margin-top: 6px; }
+    .status-chip .v { font-size: 17px; font-weight: 700; margin-top: 6px; color: #101828; }
     .status-chip.good .v { color: var(--good); }
     .status-chip.bad .v { color: var(--bad); }
     .status-chip.cyan .v { color: var(--cyan); }
     .account-grid { display: grid; grid-template-columns: 1.3fr 0.9fr; gap: 12px; }
     .account-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-    .account-stat { padding: 14px; border-radius: 16px; background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.07); }
+    .account-stat { padding: 14px; border-radius: 16px; background: #ffffff; border: 1px solid rgba(148,163,184,0.18); }
     .account-stat .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 6px; }
-    .account-stat .v { font-size: 20px; font-weight: 700; }
-    .account-profile { padding: 16px; border-radius: 18px; background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.07); display: grid; gap: 10px; }
+    .account-stat .v { font-size: 20px; font-weight: 700; color: #101828; }
+    .account-profile { padding: 16px; border-radius: 18px; background: #ffffff; border: 1px solid rgba(148,163,184,0.18); display: grid; gap: 10px; }
     .account-profile-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-    .account-name { font-size: 18px; font-weight: 700; letter-spacing: -0.03em; }
+    .account-name { font-size: 18px; font-weight: 700; letter-spacing: -0.03em; color: #101828; }
     .account-wallet { color: var(--muted); font-size: 12px; line-height: 1.45; word-break: break-all; }
     .account-meta { display: flex; flex-wrap: wrap; gap: 8px; }
     .account-note { color: var(--muted); font-size: 13px; line-height: 1.5; }
-    .account-table-wrap { margin-top: 12px; overflow-x: auto; border-radius: 18px; border: 1px solid rgba(255,255,255,0.07); background: rgba(255,255,255,0.02); }
+    .account-table-wrap { margin-top: 12px; overflow-x: auto; border-radius: 18px; border: 1px solid rgba(148,163,184,0.18); background: #ffffff; }
     .account-table { width: 100%; border-collapse: collapse; min-width: 900px; table-layout: fixed; }
-    .account-table th, .account-table td { padding: 14px 12px; border-bottom: 1px solid rgba(255,255,255,0.06); vertical-align: top; text-align: left; }
-    .account-table th { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.14em; background: rgba(255,255,255,0.025); position: sticky; top: 0; z-index: 1; }
+    .account-table th, .account-table td { padding: 14px 12px; border-bottom: 1px solid rgba(148,163,184,0.12); vertical-align: top; text-align: left; }
+    .account-table th { font-size: 11px; color: #667085; text-transform: uppercase; letter-spacing: 0.14em; background: #f8fafc; position: sticky; top: 0; z-index: 1; }
     .account-market { font-weight: 700; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     .account-subtle { color: var(--muted); font-size: 12px; margin-top: 4px; }
     .account-positions-empty { padding: 18px; color: var(--muted); }
@@ -246,14 +292,72 @@
   </style>
 </head>
 <body>
-  <div class="shell">
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-brand-row">
+        <div class="sidebar-logo">PM</div>
+        <div>
+          <div class="sidebar-title">Polymarket Weather Bot</div>
+          <div class="sidebar-sub">Live trading monitor</div>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a class="nav-item active" href="#">
+          <span class="nav-left"><span class="nav-ico">⌂</span><span>Dashboard</span></span>
+        </a>
+        <a class="nav-item" href="#signals">
+          <span class="nav-left"><span class="nav-ico">✦</span><span>Signals</span></span>
+        </a>
+        <a class="nav-item" href="#positions">
+          <span class="nav-left"><span class="nav-ico">▦</span><span>Positions</span></span>
+        </a>
+        <a class="nav-item" href="#trades">
+          <span class="nav-left"><span class="nav-ico">↔</span><span>Trades</span></span>
+          <span class="nav-badge" id="sidebar-trade-count">0</span>
+        </a>
+
+        <div class="nav-section">Account</div>
+        <a class="nav-item" href="#account-note">
+          <span class="nav-left"><span class="nav-ico">◫</span><span>Live Account</span></span>
+        </a>
+        <a class="nav-item" href="#chart-wrap">
+          <span class="nav-left"><span class="nav-ico">◔</span><span>Analytics</span></span>
+        </a>
+        <a class="nav-item" href="#">
+          <span class="nav-left"><span class="nav-ico">⚙</span><span>Settings</span></span>
+          <span class="nav-badge">2</span>
+        </a>
+        <a class="nav-item" href="#">
+          <span class="nav-left"><span class="nav-ico">? </span><span>Helps</span></span>
+        </a>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div class="topbar-left">
+          <span class="lang">EN</span>
+          <span class="lang">ID</span>
+          <span class="lang">English</span>
+        </div>
+        <div class="topbar-right">
+          <button class="icon-btn" type="button" aria-label="Notifications">🔔</button>
+          <input class="search" type="search" placeholder="Search or type..." />
+        </div>
+      </div>
+
+      <div class="shell">
     <div class="hero">
       <div class="hero-main">
         <div class="title-row">
           <div class="brand">
             <div class="brand-badge">🌦️</div>
             <div>
-              <h1>Noise-filtered Polymarket weather bot with dashboard</h1>
+              <h1>Polymarket Weather Bot</h1>
+              <div class="subtitle">
+                Live monitoring dashboard for Polymarket weather markets, open positions, signals, trades, and account sync.
+              </div>
             </div>
           </div>
           <div class="chip live-dot" id="last-refresh">connecting…</div>
@@ -347,10 +451,10 @@
         <div class="card">
           <div class="section-head" style="margin-bottom:12px;">
             <div class="section-title">
-              <div class="label">PnL Timeline</div>
-              <h2>Equity / PnL Curve</h2>
+              <div class="label">Analytics</div>
+              <h2>Live PnL Analytics</h2>
             </div>
-            <div class="small-note">Generated from stored snapshots</div>
+            <div class="small-note">This Week</div>
           </div>
           <div id="chart-wrap"></div>
         </div>
@@ -394,6 +498,8 @@
       <div>Data source: <code>Polymarket public API</code> + <code>Open-Meteo</code>. Controls via <code>/api/control</code>.</div>
       <div>Vercel-ready: host this folder and append <code>?api=https://YOUR-VPS-DOMAIN</code>.</div>
     </div>
+    </div>
+    </main>
   </div>
 
   <script>
@@ -562,6 +668,8 @@
     function renderTrades(data) {
       const trades = (data.live_trades && data.live_trades.length ? data.live_trades : (data.recent_trades || []).filter(t => String(t.source || t.mode || '').toLowerCase() === 'live')).slice(0, 5);
       document.getElementById('trade-note').textContent = `${trades.length} live trade(s)`;
+      const sidebarTradeCount = document.getElementById('sidebar-trade-count');
+      if (sidebarTradeCount) sidebarTradeCount.textContent = String(trades.length);
       document.getElementById('trades').innerHTML = trades.length ? trades.map(t => `
         <div class="signal-card trade-card">
           <div class="trade-head">
@@ -769,18 +877,18 @@
         <svg class="chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="PnL timeline">
           <defs>
             <linearGradient id="areaFill" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stop-color="rgba(96,165,250,0.35)" />
-              <stop offset="100%" stop-color="rgba(96,165,250,0.02)" />
+              <stop offset="0%" stop-color="rgba(99,102,241,0.24)" />
+              <stop offset="100%" stop-color="rgba(99,102,241,0.03)" />
             </linearGradient>
           </defs>
-          <rect x="0" y="0" width="${width}" height="${height}" rx="18" fill="rgba(8, 15, 29, 0.45)" />
+          <rect x="0" y="0" width="${width}" height="${height}" rx="18" fill="rgba(255,255,255,0.96)" />
           <path d="${area}" fill="url(#areaFill)" opacity="0.85"></path>
-          <polyline points="${poly}" fill="none" stroke="rgba(103,232,249,0.95)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
-          <line x1="${pad}" y1="${toY(0).toFixed(1)}" x2="${width - pad}" y2="${toY(0).toFixed(1)}" stroke="rgba(160,189,255,0.12)" stroke-dasharray="6 6" />
-          <circle cx="${toX(points.length - 1).toFixed(1)}" cy="${toY(last.y).toFixed(1)}" r="5" fill="rgba(74,222,128,0.95)" />
-          <text x="${pad}" y="20" fill="#9fb2d4" font-size="11" letter-spacing=".12em" text-transform="uppercase">Unrealized PnL</text>
-          <text x="${pad}" y="${height - 8}" fill="#9fb2d4" font-size="11">${esc(last.label ? t(last.label) : '')}</text>
-          <text x="${width - pad}" y="20" text-anchor="end" fill="#9fb2d4" font-size="11">last: ${fmtPnL(last.y)} • ${last.open} open</text>
+          <polyline points="${poly}" fill="none" stroke="rgba(99,102,241,0.95)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
+          <line x1="${pad}" y1="${toY(0).toFixed(1)}" x2="${width - pad}" y2="${toY(0).toFixed(1)}" stroke="rgba(148,163,184,0.20)" stroke-dasharray="6 6" />
+          <circle cx="${toX(points.length - 1).toFixed(1)}" cy="${toY(last.y).toFixed(1)}" r="5" fill="rgba(139,92,246,0.95)" />
+          <text x="${pad}" y="20" fill="#667085" font-size="11" letter-spacing=".12em" text-transform="uppercase">Unrealized PnL</text>
+          <text x="${pad}" y="${height - 8}" fill="#667085" font-size="11">${esc(last.label ? t(last.label) : '')}</text>
+          <text x="${width - pad}" y="20" text-anchor="end" fill="#667085" font-size="11">last: ${fmtPnL(last.y)} • ${last.open} open</text>
         </svg>
       `;
       wrap.innerHTML = `
