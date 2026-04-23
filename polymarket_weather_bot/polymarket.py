@@ -36,7 +36,7 @@ def _parse_json_field(value: Any, default):
         return default
 
 
-def discover_weather_markets(min_volume: float = 5000.0, max_results: int = 50) -> List[Market]:
+def discover_weather_markets(min_volume: float = 5000.0, max_results: int = 50, store: Optional[Any] = None) -> List[Market]:
     seen = set()
     results: List[Market] = []
 
@@ -53,14 +53,51 @@ def discover_weather_markets(min_volume: float = 5000.0, max_results: int = 50) 
             no_price = float(prices[1])
             volume = float(item.get("volume") or 0.0)
             liquidity = float(item.get("liquidity") or 0.0)
+            record = {
+                "source": "gamma",
+                "market_id": str(item.get("id") or item.get("conditionId") or q),
+                "market": {
+                    "id": str(item.get("id") or item.get("conditionId") or q),
+                    "question": q,
+                    "slug": str(item.get("slug") or ""),
+                    "condition_id": str(item.get("conditionId") or ""),
+                    "yes_price": yes_price,
+                    "no_price": no_price,
+                    "volume": volume,
+                    "liquidity": liquidity,
+                    "active": bool(item.get("active", True)),
+                    "closed": bool(item.get("closed", False)),
+                    "end_date": item.get("endDate"),
+                    "category": item.get("category"),
+                },
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
             if volume < min_volume:
+                record["status"] = "filtered_volume"
+                if store is not None:
+                    try:
+                        store.save_market_scan(record)
+                    except Exception:
+                        pass
                 return
             if bool(item.get("closed", False)):
+                record["status"] = "filtered_closed"
+                if store is not None:
+                    try:
+                        store.save_market_scan(record)
+                    except Exception:
+                        pass
                 return
             end_date = item.get("endDate")
             if end_date:
                 try:
                     if parse_end_date(end_date) and parse_end_date(end_date) < datetime.now().date():
+                        record["status"] = "filtered_expired"
+                        if store is not None:
+                            try:
+                                store.save_market_scan(record)
+                            except Exception:
+                                pass
                         return
                 except Exception:
                     pass
@@ -68,6 +105,12 @@ def discover_weather_markets(min_volume: float = 5000.0, max_results: int = 50) 
             if dedupe_key in seen:
                 return
             seen.add(dedupe_key)
+            record["status"] = "accepted"
+            if store is not None:
+                try:
+                    store.save_market_scan(record)
+                except Exception:
+                    pass
             results.append(
                 Market(
                     id=dedupe_key,

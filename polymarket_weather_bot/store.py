@@ -59,6 +59,24 @@ class Store:
                     payload TEXT,
                     created_at TEXT
                 );
+                CREATE TABLE IF NOT EXISTS market_scans (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    market_id TEXT,
+                    payload TEXT,
+                    created_at TEXT
+                );
+                CREATE TABLE IF NOT EXISTS forecast_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    market_id TEXT,
+                    payload TEXT,
+                    created_at TEXT
+                );
+                CREATE TABLE IF NOT EXISTS signal_outcomes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    market_id TEXT,
+                    payload TEXT,
+                    created_at TEXT
+                );
                 CREATE TABLE IF NOT EXISTS snapshots (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     payload TEXT,
@@ -136,6 +154,39 @@ class Store:
                 (trade.market_id, json.dumps(asdict(trade), ensure_ascii=False), trade.created_at),
             )
 
+    def save_market_scan(self, payload: Dict[str, Any]):
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO market_scans (market_id, payload, created_at) VALUES (?, ?, ?)",
+                (
+                    str(payload.get('market_id') or payload.get('market', {}).get('id') or ''),
+                    json.dumps(payload, ensure_ascii=False),
+                    payload.get('created_at') or datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+
+    def save_forecast_snapshot(self, payload: Dict[str, Any]):
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO forecast_snapshots (market_id, payload, created_at) VALUES (?, ?, ?)",
+                (
+                    str(payload.get('market_id') or ''),
+                    json.dumps(payload, ensure_ascii=False),
+                    payload.get('created_at') or datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+
+    def save_signal_outcome(self, payload: Dict[str, Any]):
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO signal_outcomes (market_id, payload, created_at) VALUES (?, ?, ?)",
+                (
+                    str(payload.get('market_id') or ''),
+                    json.dumps(payload, ensure_ascii=False),
+                    payload.get('created_at') or datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+
     def save_snapshot(self, payload: Dict[str, Any]):
         with self._connect() as conn:
             conn.execute(
@@ -192,6 +243,21 @@ class Store:
     def get_trades(self, limit: int = 100) -> List[Dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute("SELECT payload FROM trades ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            return [json.loads(r[0]) for r in rows]
+
+    def get_market_scans(self, limit: int = 100) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT payload FROM market_scans ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            return [json.loads(r[0]) for r in rows]
+
+    def get_forecast_snapshots(self, limit: int = 100) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT payload FROM forecast_snapshots ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            return [json.loads(r[0]) for r in rows]
+
+    def get_signal_outcomes(self, limit: int = 100) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT payload FROM signal_outcomes ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
             return [json.loads(r[0]) for r in rows]
 
     def get_signals(self, limit: int = 100) -> List[Dict[str, Any]]:

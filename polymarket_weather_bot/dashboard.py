@@ -121,6 +121,10 @@ class DashboardState:
             unrealized_pnl = round(sum(float(p.get('unrealized_pnl', 0.0)) for p in live_positions), 4)
             return_pct = round((unrealized_pnl / total_cost * 100.0) if total_cost else 0.0, 2)
 
+        market_scans = self.store.get_market_scans(12)
+        forecasts = self.store.get_forecast_snapshots(12)
+        signal_outcomes = self.store.get_signal_outcomes(12)
+
         return {
             'mode': snapshot.get('mode', os.getenv('BOT_MODE', 'paper')),
             'signals_count': snapshot.get('signals_count', 0),
@@ -143,6 +147,12 @@ class DashboardState:
             'alerts': alerts,
             'bot_health': bot_health,
             'live_account': live_account,
+            'market_scans_count': len(self.store.get_market_scans(1000)),
+            'forecast_snapshots_count': len(self.store.get_forecast_snapshots(1000)),
+            'signal_outcomes_count': len(self.store.get_signal_outcomes(1000)),
+            'latest_market_scans': market_scans,
+            'latest_forecast_snapshots': forecasts,
+            'latest_signal_outcomes': signal_outcomes,
             'health': {
                 'paused': _truthy(controls.get('paused', False)),
                 'force_scan': _truthy(controls.get('force_scan', False)),

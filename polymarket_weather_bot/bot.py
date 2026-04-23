@@ -112,10 +112,37 @@ class BotEngine:
         for market in markets:
             try:
                 res = self.strategy.analyze_market(market)
-                if res.get("skip"):
+                analysis_record = {
+                    'market_id': market.id,
+                    'question': market.question,
+                    'market': asdict(market),
+                    'analysis': {k: v for k, v in res.items() if k not in ('signal', 'forecast')},
+                    'created_at': datetime.now(timezone.utc).isoformat(),
+                }
+                if res.get('forecast'):
+                    forecast = dict(res['forecast'])
+                    analysis_record['forecast'] = forecast
+                    self.store.save_forecast_snapshot({
+                        'market_id': market.id,
+                        'city': forecast.get('city'),
+                        'date': forecast.get('date'),
+                        'forecast': forecast,
+                        'signal_meta': {'edge_threshold': self.strategy.edge_threshold, 'mode': self.mode},
+                        'created_at': datetime.now(timezone.utc).isoformat(),
+                    })
+                self.store.save_market_scan(analysis_record)
+                if res.get('skip'):
                     continue
-                signal: Signal = res["signal"]
+                signal: Signal = res['signal']
                 self.store.save_signal(signal)
+                self.store.save_signal_outcome({
+                    'market_id': signal.market_id,
+                    'question': signal.question,
+                    'signal': asdict(signal),
+                    'forecast': res.get('forecast'),
+                    'market': asdict(market),
+                    'created_at': signal.generated_at,
+                })
                 signals.append(asdict(signal))
                 try:
                     self.notifier.notify_signal(signal)
@@ -160,6 +187,12 @@ class BotEngine:
                     "open_orders_count": 0,
                 }
         snapshot = self._build_snapshot(signals, live_account=live_account)
+        snapshot['market_scans_count'] = len(self.store.get_market_scans(1000))
+        snapshot['forecast_snapshots_count'] = len(self.store.get_forecast_snapshots(1000))
+        snapshot['signal_outcomes_count'] = len(self.store.get_signal_outcomes(1000))
+        snapshot['latest_market_scans'] = self.store.get_market_scans(12)
+        snapshot['latest_forecast_snapshots'] = self.store.get_forecast_snapshots(12)
+        snapshot['latest_signal_outcomes'] = self.store.get_signal_outcomes(12)
         self.store.save_snapshot(snapshot)
         return snapshot
 

@@ -24,7 +24,7 @@ def _truthy(value: Any) -> bool:
 
 
 def run_once(store: Store, engine: BotEngine, min_volume: float) -> Dict[str, Any]:
-    markets = discover_weather_markets(min_volume=min_volume)
+    markets = discover_weather_markets(min_volume=min_volume, store=store)
     return engine.scan_and_trade(markets)
 
 

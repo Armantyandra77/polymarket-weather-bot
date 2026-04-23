@@ -252,6 +252,67 @@ def test_dashboard_state_and_controls(tmp_path):
     assert state['controls']['paused'] is True
     assert state['alerts']['enabled'] in (True, False)
     assert 'freshness_seconds' in state
+    assert state['market_scans_count'] == 0
+    assert state['forecast_snapshots_count'] == 0
+    assert state['signal_outcomes_count'] == 0
+
+
+def test_bot_engine_records_market_scan_forecast_and_signal_outcome(monkeypatch, tmp_path):
+    store = Store(str(tmp_path / 'bot.db'))
+    strategy = WeatherStrategy(min_volume=1000, max_spread=0.5, edge_threshold=0.01)
+    sync = PolymarketAccountSync(
+        PolymarketAccountConfig(
+            wallet_address='0x1234567890abcdef1234567890abcdef12345678',
+            private_key='0xdeadbeef',
+        ),
+        http_get=lambda *args, **kwargs: {'value': '0'},
+        client_factory=lambda config: object(),
+    )
+    engine = BotEngine(store, strategy, mode='paper', account_sync=sync)
+    market = Market(
+        id='m-scan',
+        question='Will Seoul be between 17°C and 18°C on 2030-04-17?',
+        slug='seoul-weather',
+        condition_id='0xabc',
+        yes_price=0.20,
+        no_price=0.80,
+        volume=10000,
+        liquidity=5000,
+        active=True,
+        closed=False,
+        end_date='2030-04-17T00:00:00Z',
+    )
+
+    def fake_analyze_market(market_obj):
+        signal = Signal(
+            market_id=market_obj.id,
+            question=market_obj.question,
+            city='Seoul',
+            date='2030-04-17',
+            market_prob=0.20,
+            model_prob=0.70,
+            edge=0.50,
+            action='BUY_YES',
+            confidence=0.9,
+            rationale='edge=+50.00%',
+            generated_at='2030-04-17T00:00:00Z',
+        )
+        return {
+            'skip': False,
+            'signal': signal,
+            'meta': {'kind': 'range'},
+            'forecast': {'city': 'Seoul', 'date': '2030-04-17', 'mean': 17.5, 'high': 18.5, 'low': 16.5, 'sigma': 1.0},
+        }
+
+    monkeypatch.setattr(strategy, 'analyze_market', fake_analyze_market)
+    monkeypatch.setattr(strategy, 'should_enter', lambda signal, open_positions: False)
+    snapshot = engine.scan_and_trade([market])
+    assert snapshot['market_scans_count'] == 1
+    assert snapshot['forecast_snapshots_count'] == 1
+    assert snapshot['signal_outcomes_count'] == 1
+    assert store.get_market_scans(10)[0]['analysis']['skip'] is False
+    assert store.get_forecast_snapshots(10)[0]['forecast']['city'] == 'Seoul'
+    assert store.get_signal_outcomes(10)[0]['signal']['action'] == 'BUY_YES'
 
 
 def test_bot_engine_switches_to_live_executor(monkeypatch, tmp_path):
