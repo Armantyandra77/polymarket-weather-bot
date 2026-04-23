@@ -80,9 +80,23 @@
     .nav-ico { width: 28px; height: 28px; border-radius: 10px; display: grid; place-items: center; background: #f8fafc; color: #6366f1; }
     .nav-badge { min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; background: #ffe4ec; color: #e11d48; }
     .main { min-width: 0; }
-    .topbar {
-      display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 4px 10px 4px; margin: 0 18px 4px;
+    .page[hidden] { display: none !important; }
+    .notif-panel {
+      margin: 0 18px 10px;
+      padding: 14px;
+      border-radius: 18px;
+      border: 1px solid rgba(148,163,184,0.18);
+      background: rgba(255,255,255,0.92);
+      box-shadow: 0 16px 36px rgba(15,23,42,0.08);
+      display: grid;
+      gap: 10px;
     }
+    .notif-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .notif-title { font-weight: 700; color: #101828; }
+    .notif-list { display: grid; gap: 8px; }
+    .notif-item { padding: 10px 12px; border-radius: 14px; background: #f8fafc; border: 1px solid rgba(148,163,184,0.16); color: #344054; font-size: 13px; line-height: 1.45; }
+    .lang-btn.active { background: #eef2ff; color: #4f46e5; border-color: rgba(99,102,241,0.22); }
+    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 4px 10px 4px; margin: 0 18px 4px; }
     .topbar-left, .topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .lang { color: #344054; font-size: 13px; padding: 6px 10px; border-radius: 12px; border: 1px solid rgba(148,163,184,0.16); background: rgba(255,255,255,0.72); }
     .icon-btn { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; border: 1px solid rgba(148,163,184,0.16); background: rgba(255,255,255,0.72); color: #475467; }
@@ -297,39 +311,39 @@
       <div class="sidebar-brand-row">
         <div class="sidebar-logo">PM</div>
         <div>
-          <div class="sidebar-title">Polymarket Weather Bot</div>
-          <div class="sidebar-sub">Live trading monitor</div>
+          <div class="sidebar-title" id="sidebar-title">Polymarket Weather Bot</div>
+          <div class="sidebar-sub" id="sidebar-sub">Live trading monitor</div>
         </div>
       </div>
 
       <nav class="sidebar-nav">
-        <a class="nav-item active" href="#">
-          <span class="nav-left"><span class="nav-ico">⌂</span><span>Dashboard</span></span>
+        <a class="nav-item active" href="#dashboard" data-view="dashboard">
+          <span class="nav-left"><span class="nav-ico">⌂</span><span id="nav-dashboard">Dashboard</span></span>
         </a>
-        <a class="nav-item" href="#signals">
-          <span class="nav-left"><span class="nav-ico">✦</span><span>Signals</span></span>
+        <a class="nav-item" href="#signals" data-view="signals">
+          <span class="nav-left"><span class="nav-ico">✦</span><span id="nav-signals">Signals</span></span>
         </a>
-        <a class="nav-item" href="#positions">
-          <span class="nav-left"><span class="nav-ico">▦</span><span>Positions</span></span>
+        <a class="nav-item" href="#positions" data-view="positions">
+          <span class="nav-left"><span class="nav-ico">▦</span><span id="nav-positions">Positions</span></span>
         </a>
-        <a class="nav-item" href="#trades">
-          <span class="nav-left"><span class="nav-ico">↔</span><span>Trades</span></span>
+        <a class="nav-item" href="#trades" data-view="trades">
+          <span class="nav-left"><span class="nav-ico">↔</span><span id="nav-trades">Trades</span></span>
           <span class="nav-badge" id="sidebar-trade-count">0</span>
         </a>
 
         <div class="nav-section">Account</div>
-        <a class="nav-item" href="#account-note">
-          <span class="nav-left"><span class="nav-ico">◫</span><span>Live Account</span></span>
+        <a class="nav-item" href="#account" data-view="account">
+          <span class="nav-left"><span class="nav-ico">◫</span><span id="nav-account">Live Account</span></span>
         </a>
-        <a class="nav-item" href="#chart-wrap">
-          <span class="nav-left"><span class="nav-ico">◔</span><span>Analytics</span></span>
+        <a class="nav-item" href="#analytics" data-view="analytics">
+          <span class="nav-left"><span class="nav-ico">◔</span><span id="nav-analytics">Analytics</span></span>
         </a>
-        <a class="nav-item" href="#">
-          <span class="nav-left"><span class="nav-ico">⚙</span><span>Settings</span></span>
+        <a class="nav-item" href="#settings" data-view="settings">
+          <span class="nav-left"><span class="nav-ico">⚙</span><span id="nav-settings">Settings</span></span>
           <span class="nav-badge">2</span>
         </a>
-        <a class="nav-item" href="#">
-          <span class="nav-left"><span class="nav-ico">? </span><span>Helps</span></span>
+        <a class="nav-item" href="#helps" data-view="helps">
+          <span class="nav-left"><span class="nav-ico">? </span><span id="nav-helps">Helps</span></span>
         </a>
       </nav>
     </aside>
@@ -337,25 +351,33 @@
     <main class="main">
       <div class="topbar">
         <div class="topbar-left">
-          <span class="lang">EN</span>
-          <span class="lang">ID</span>
-          <span class="lang">English</span>
+          <button class="lang lang-btn active" type="button" data-lang="en" id="lang-en">EN</button>
+          <button class="lang lang-btn" type="button" data-lang="id" id="lang-id">ID</button>
+          <span class="lang" id="lang-label">English</span>
         </div>
         <div class="topbar-right">
-          <button class="icon-btn" type="button" aria-label="Notifications">🔔</button>
-          <input class="search" type="search" placeholder="Search or type..." />
+          <button class="icon-btn" type="button" aria-label="Notifications" id="btn-notifications">🔔</button>
+          <input class="search" type="search" placeholder="Search or type..." id="search-input" />
         </div>
       </div>
 
+      <div class="notif-panel" id="notif-panel" hidden>
+        <div class="notif-head">
+          <div class="notif-title" id="notif-title">Notifications</div>
+          <div class="small-note" id="notif-note">Latest live alerts and updates</div>
+        </div>
+        <div class="notif-list" id="notif-list"></div>
+      </div>
+
       <div class="shell">
-    <div class="hero">
+      <div class="hero page" data-page="dashboard">
       <div class="hero-main">
         <div class="title-row">
           <div class="brand">
             <div class="brand-badge">🌦️</div>
             <div>
-              <h1>Polymarket Weather Bot</h1>
-              <div class="subtitle">
+              <h1 id="hero-title">Polymarket Weather Bot</h1>
+              <div class="subtitle" id="hero-subtitle">
                 Live monitoring dashboard for Polymarket weather markets, open positions, signals, trades, and account sync.
               </div>
             </div>
@@ -393,15 +415,15 @@
       </div>
     </div>
 
-    <div class="grid" id="stats"></div>
+    <div class="grid page" id="stats" data-page="dashboard"></div>
 
     <div class="section">
       <div class="panel-grid">
-        <div class="card">
+        <div class="card page" data-page="positions">
           <div class="section-head" style="margin-bottom:12px;">
             <div class="section-title">
-              <div class="label">Live Positions</div>
-              <h2>Live Positions</h2>
+              <div class="label" id="positions-label">Live Positions</div>
+              <h2 id="positions-heading">Live Positions</h2>
             </div>
           </div>
           <div class="table-wrap">
@@ -409,13 +431,13 @@
           </div>
         </div>
 
-        <div class="card">
+        <div class="card page" data-page="settings">
           <div class="section-head" style="margin-bottom:12px;">
             <div class="section-title">
-              <div class="label">Health</div>
-              <h2>Bot Health & Controls</h2>
+              <div class="label" id="settings-label">Health</div>
+              <h2 id="settings-heading">Bot Health & Controls</h2>
             </div>
-            <div class="small-note">Live state, alerting, freshness, pause/rescan</div>
+            <div class="small-note" id="settings-note">Live state, alerting, freshness, pause/rescan</div>
           </div>
           <div class="control-panel">
             <div class="status-grid" id="status-grid"></div>
@@ -430,11 +452,11 @@
         </div>
       </div>
 
-      <div class="card">
+      <div class="card page" data-page="account">
         <div class="section-head" style="margin-bottom:12px;">
           <div class="section-title">
-            <div class="label">Live Account</div>
-            <h2>Portfolio / Balance / Open Positions</h2>
+            <div class="label" id="account-label">Live Account</div>
+            <h2 id="account-heading">Portfolio / Balance / Open Positions</h2>
           </div>
           <div class="small-note" id="account-note">Awaiting account sync…</div>
         </div>
@@ -448,45 +470,45 @@
       </div>
 
       <div class="panel-grid">
-        <div class="card">
+        <div class="card page" data-page="analytics">
           <div class="section-head" style="margin-bottom:12px;">
             <div class="section-title">
-              <div class="label">Analytics</div>
-              <h2>Live PnL Analytics</h2>
+              <div class="label" id="analytics-label">Analytics</div>
+              <h2 id="analytics-heading">Live PnL Analytics</h2>
             </div>
-            <div class="small-note">This Week</div>
+            <div class="small-note" id="analytics-note">This Week</div>
           </div>
           <div id="chart-wrap"></div>
         </div>
 
-        <div class="card">
+        <div class="card page" data-page="analytics">
           <div class="section-head" style="margin-bottom:12px;">
             <div class="section-title">
-              <div class="label">Decision Journal</div>
-              <h2>Journal</h2>
+              <div class="label" id="journal-label">Decision Journal</div>
+              <h2 id="journal-heading">Journal</h2>
             </div>
-            <div class="small-note">Signals, trades, and errors in one timeline</div>
+            <div class="small-note" id="journal-note">Signals, trades, and errors in one timeline</div>
           </div>
           <div class="journal" id="journal"></div>
         </div>
       </div>
 
-      <div class="card">
+      <div class="card page" data-page="signals">
         <div class="section-head" style="margin-bottom:12px;">
           <div class="section-title">
-            <div class="label">Recent Signals</div>
-            <h2>Recent Signals</h2>
+            <div class="label" id="signals-label">Recent Signals</div>
+            <h2 id="signals-heading">Recent Signals</h2>
           </div>
-          <div class="small-note">Noise-filtered candidates only</div>
+          <div class="small-note" id="signals-note">Noise-filtered candidates only</div>
         </div>
         <div class="list" id="signals"></div>
       </div>
 
-      <div class="card">
+      <div class="card page" data-page="trades">
         <div class="section-head" style="margin-bottom:12px;">
           <div class="section-title">
-            <div class="label">Recent Trades</div>
-            <h2>Recent Trades</h2>
+            <div class="label" id="trades-label">Recent Trades</div>
+            <h2 id="trades-heading">Recent Trades</h2>
           </div>
           <div class="small-note" id="trade-note">—</div>
         </div>
@@ -494,7 +516,20 @@
       </div>
     </div>
 
-    <div class="footer">
+      <div class="card page" data-page="helps">
+        <div class="section-head" style="margin-bottom:12px;">
+          <div class="section-title">
+            <div class="label" id="helps-label">Helps</div>
+            <h2 id="helps-heading">How to use this dashboard</h2>
+          </div>
+          <div class="small-note" id="helps-note">Quick guide for live monitoring</div>
+        </div>
+        <div class="empty" id="helps-body">
+          Use the sidebar to switch between Dashboard, Signals, Positions, Trades, Account, and Analytics. Language buttons toggle EN/ID, the bell opens recent alerts, and the search bar filters the current view.
+        </div>
+      </div>
+
+      <div class="footer">
       <div>Data source: <code>Polymarket public API</code> + <code>Open-Meteo</code>. Controls via <code>/api/control</code>.</div>
       <div>Vercel-ready: host this folder and append <code>?api=https://YOUR-VPS-DOMAIN</code>.</div>
     </div>
@@ -518,6 +553,112 @@
     let stateData = null;
     let snapshotData = { snapshots: [] };
     let journalData = { journal: [] };
+    const navItems = Array.from(document.querySelectorAll('.nav-item[data-view]'));
+    function getPages() {
+      return Array.from(document.querySelectorAll('.page[data-page]'));
+    }
+    const langButtons = Array.from(document.querySelectorAll('.lang-btn'));
+    const searchInput = document.getElementById('search-input');
+    const notifPanel = document.getElementById('notif-panel');
+    const notifList = document.getElementById('notif-list');
+    const notifBtn = document.getElementById('btn-notifications');
+    let currentView = (location.hash || '#dashboard').replace('#', '') || 'dashboard';
+    let currentLang = localStorage.getItem('polyweather.lang') || 'en';
+
+    const COPY = {
+      en: {
+        langLabel: 'English',
+        sidebarSub: 'Live trading monitor',
+        dashboard: 'Dashboard',
+        signals: 'Signals',
+        positions: 'Positions',
+        trades: 'Trades',
+        account: 'Live Account',
+        analytics: 'Analytics',
+        settings: 'Settings',
+        helps: 'Helps',
+        heroTitle: 'Polymarket Weather Bot',
+        heroSubtitle: 'Live monitoring dashboard for Polymarket weather markets, open positions, signals, trades, and account sync.',
+        resume: '▶ Resume scan',
+        pause: '⏸ Pause scan',
+        force: '↻ Force rescan',
+        refresh: '⟳ Refresh now',
+        notifTitle: 'Notifications',
+        notifNote: 'Latest live alerts and updates',
+        positionsLabel: 'Live Positions',
+        positionsHeading: 'Live Positions',
+        settingsLabel: 'Health',
+        settingsHeading: 'Bot Health & Controls',
+        settingsNote: 'Live state, alerting, freshness, pause/rescan',
+        accountLabel: 'Live Account',
+        accountHeading: 'Portfolio / Balance / Open Positions',
+        accountNote: 'Awaiting account sync…',
+        analyticsLabel: 'Analytics',
+        analyticsHeading: 'Live PnL Analytics',
+        analyticsNote: 'This Week',
+        journalLabel: 'Decision Journal',
+        journalHeading: 'Journal',
+        journalNote: 'Signals, trades, and errors in one timeline',
+        signalsLabel: 'Recent Signals',
+        signalsHeading: 'Recent Signals',
+        signalsNote: 'Noise-filtered candidates only',
+        tradesLabel: 'Recent Trades',
+        tradesHeading: 'Recent Trades',
+        helpsLabel: 'Helps',
+        helpsHeading: 'How to use this dashboard',
+        helpsNote: 'Quick guide for live monitoring',
+        helpsBody: 'Use the sidebar to switch between Dashboard, Signals, Positions, Trades, Account, and Analytics. Language buttons toggle EN/ID, the bell opens recent alerts, and the search bar filters the current view.',
+        searchPlaceholder: 'Search or type...',
+        footerSource: 'Data source: Polymarket public API + Open-Meteo. Controls via /api/control.',
+        footerVercel: 'Vercel-ready: host this folder and append ?api=https://YOUR-VPS-DOMAIN.',
+      },
+      id: {
+        langLabel: 'Bahasa Indonesia',
+        sidebarSub: 'Monitor trading live',
+        dashboard: 'Dasbor',
+        signals: 'Sinyal',
+        positions: 'Posisi',
+        trades: 'Trade',
+        account: 'Akun Live',
+        analytics: 'Analitik',
+        settings: 'Pengaturan',
+        helps: 'Bantuan',
+        heroTitle: 'Polymarket Weather Bot',
+        heroSubtitle: 'Dasbor live untuk memonitor pasar cuaca Polymarket, posisi terbuka, sinyal, trade, dan sinkronisasi akun.',
+        resume: '▶ Lanjutkan scan',
+        pause: '⏸ Jeda scan',
+        force: '↻ Paksa rescan',
+        refresh: '⟳ Muat ulang',
+        notifTitle: 'Notifikasi',
+        notifNote: 'Alert dan update live terbaru',
+        positionsLabel: 'Posisi Live',
+        positionsHeading: 'Posisi Live',
+        settingsLabel: 'Kesehatan',
+        settingsHeading: 'Kesehatan Bot & Kontrol',
+        settingsNote: 'State live, alerting, freshness, pause/rescan',
+        accountLabel: 'Akun Live',
+        accountHeading: 'Portofolio / Balance / Posisi Terbuka',
+        accountNote: 'Menunggu sinkronisasi akun…',
+        analyticsLabel: 'Analitik',
+        analyticsHeading: 'Analitik PnL Live',
+        analyticsNote: 'Minggu ini',
+        journalLabel: 'Jurnal Keputusan',
+        journalHeading: 'Jurnal',
+        journalNote: 'Sinyal, trade, dan error dalam satu timeline',
+        signalsLabel: 'Sinyal Terbaru',
+        signalsHeading: 'Sinyal Terbaru',
+        signalsNote: 'Hanya kandidat yang sudah difilter',
+        tradesLabel: 'Trade Terbaru',
+        tradesHeading: 'Trade Terbaru',
+        helpsLabel: 'Bantuan',
+        helpsHeading: 'Cara pakai dashboard ini',
+        helpsNote: 'Panduan cepat untuk monitoring live',
+        helpsBody: 'Pakai sidebar untuk pindah ke Dasbor, Sinyal, Posisi, Trade, Akun, dan Analitik. Tombol bahasa untuk EN/ID, lonceng untuk alert terbaru, dan search bar untuk filter tampilan aktif.',
+        searchPlaceholder: 'Cari atau ketik...',
+        footerSource: 'Sumber data: Polymarket public API + Open-Meteo. Kontrol lewat /api/control.',
+        footerVercel: 'Siap Vercel: host folder ini dan tambahkan ?api=https://YOUR-VPS-DOMAIN.',
+      },
+    };
 
     function esc(value) {
       return String(value ?? '')
@@ -553,6 +694,169 @@
     function stateHeaders() {
       return {};
     }
+
+    function setText(id, value) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value;
+    }
+
+    function applyLanguage(lang) {
+      const copy = COPY[lang] || COPY.en;
+      currentLang = COPY[lang] ? lang : 'en';
+      localStorage.setItem('polyweather.lang', currentLang);
+      setText('lang-label', copy.langLabel);
+      setText('sidebar-sub', copy.sidebarSub);
+      setText('nav-dashboard', copy.dashboard);
+      setText('nav-signals', copy.signals);
+      setText('nav-positions', copy.positions);
+      setText('nav-trades', copy.trades);
+      setText('nav-account', copy.account);
+      setText('nav-analytics', copy.analytics);
+      setText('nav-settings', copy.settings);
+      setText('nav-helps', copy.helps);
+      setText('hero-title', copy.heroTitle);
+      setText('hero-subtitle', copy.heroSubtitle);
+      const buttonTexts = [
+        ['btn-resume', copy.resume],
+        ['btn-pause', copy.pause],
+        ['btn-force', copy.force],
+        ['btn-refresh', copy.refresh],
+        ['notif-title', copy.notifTitle],
+        ['notif-note', copy.notifNote],
+        ['positions-label', copy.positionsLabel],
+        ['positions-heading', copy.positionsHeading],
+        ['settings-label', copy.settingsLabel],
+        ['settings-heading', copy.settingsHeading],
+        ['settings-note', copy.settingsNote],
+        ['account-label', copy.accountLabel],
+        ['account-heading', copy.accountHeading],
+        ['account-note', copy.accountNote],
+        ['analytics-label', copy.analyticsLabel],
+        ['analytics-heading', copy.analyticsHeading],
+        ['analytics-note', copy.analyticsNote],
+        ['journal-label', copy.journalLabel],
+        ['journal-heading', copy.journalHeading],
+        ['journal-note', copy.journalNote],
+        ['signals-label', copy.signalsLabel],
+        ['signals-heading', copy.signalsHeading],
+        ['signals-note', copy.signalsNote],
+        ['trades-label', copy.tradesLabel],
+        ['trades-heading', copy.tradesHeading],
+        ['helps-label', copy.helpsLabel],
+        ['helps-heading', copy.helpsHeading],
+        ['helps-note', copy.helpsNote],
+        ['helps-body', copy.helpsBody],
+      ];
+      for (const [id, value] of buttonTexts) setText(id, value);
+      const footer = document.querySelector('.footer');
+      if (footer) {
+        footer.innerHTML = `<div>${esc(copy.footerSource)}</div><div>${esc(copy.footerVercel)}</div>`;
+      }
+      searchInput.placeholder = copy.searchPlaceholder;
+      langButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.lang === currentLang));
+    }
+
+    function setView(view, push = true) {
+      const next = ['dashboard', 'signals', 'positions', 'trades', 'account', 'analytics', 'settings', 'helps'].includes(view) ? view : 'dashboard';
+      currentView = next;
+      const pages = getPages();
+      pages.forEach(page => {
+        page.hidden = page.dataset.page !== next;
+      });
+      navItems.forEach(item => item.classList.toggle('active', item.dataset.view === next));
+      if (push && location.hash.replace('#', '') !== next) {
+        location.hash = next;
+      }
+      window.scrollTo(0, 0);
+      applySearch();
+    }
+
+    function renderNotifications() {
+      const errors = (stateData?.recent_errors || []).slice(0, 3);
+      const signals = (stateData?.recent_signals || []).slice(0, 2);
+      const trades = ((stateData?.live_trades && stateData.live_trades.length ? stateData.live_trades : (stateData?.recent_trades || []).filter(t => String(t.source || t.mode || '').toLowerCase() === 'live')) || []).slice(0, 2);
+      const items = [];
+      errors.forEach(err => items.push({ tone: 'error', text: err.error || err.message || JSON.stringify(err) }));
+      signals.forEach(sig => items.push({ tone: 'signal', text: `${sig.action || 'Signal'} • ${sig.question || ''} • edge ${pct(sig.edge || 0)}` }));
+      trades.forEach(tr => items.push({ tone: 'trade', text: `${tr.side || 'Trade'} • ${tr.quantity || ''} @ ${pct(tr.price || 0)}` }));
+      if (!items.length) items.push({ tone: 'signal', text: 'No recent notifications yet.' });
+      notifList.innerHTML = items.map(item => `<div class="notif-item ${item.tone}">${esc(item.text)}</div>`).join('');
+    }
+
+    function applySearch() {
+      const q = (searchInput.value || '').trim().toLowerCase();
+      const pages = getPages();
+      const active = pages.find(page => !page.hidden) || null;
+      if (!active) return;
+      const cards = active.querySelectorAll('.card');
+      cards.forEach(card => {
+        if (!q) {
+          card.hidden = false;
+          return;
+        }
+        const text = card.innerText.toLowerCase();
+        card.hidden = !text.includes(q);
+      });
+    }
+
+    function toggleNotifications(force) {
+      const next = typeof force === 'boolean' ? force : notifPanel.hidden;
+      notifPanel.hidden = !next;
+      if (next) renderNotifications();
+    }
+
+    function syncLangButtons() {
+      langButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.lang === currentLang));
+    }
+
+    function updateLanguageUI() {
+      applyLanguage(currentLang);
+    }
+
+    function readHashView() {
+      return (location.hash || '#dashboard').replace('#', '') || 'dashboard';
+    }
+
+    function bindNavigation() {
+      navItems.forEach(item => {
+        item.addEventListener('click', (event) => {
+          event.preventDefault();
+          const view = item.dataset.view || 'dashboard';
+          setView(view, true);
+        });
+      });
+      langButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          currentLang = btn.dataset.lang || 'en';
+          applyLanguage(currentLang);
+        });
+      });
+      notifBtn.addEventListener('click', () => toggleNotifications());
+      searchInput.addEventListener('input', () => applySearch());
+      window.addEventListener('hashchange', () => setView(readHashView(), false));
+      document.addEventListener('click', (event) => {
+        if (!notifPanel.hidden && !notifPanel.contains(event.target) && event.target !== notifBtn) {
+          notifPanel.hidden = true;
+        }
+      });
+    }
+
+    function bootstrapUI() {
+      document.body.dataset.booted = '1';
+      applyLanguage(currentLang);
+      bindNavigation();
+      setView(readHashView(), false);
+    }
+
+    window.__setView = setView;
+    window.__bootstrapUI = bootstrapUI;
+    window.__getPages = getPages;
+
+    bootstrapUI();
+    setTimeout(bootstrapUI, 0);
+    setTimeout(bootstrapUI, 250);
+    window.addEventListener('DOMContentLoaded', bootstrapUI, { once: true });
+    window.addEventListener('load', bootstrapUI, { once: true });
 
     async function fetchJSON(url, options = {}) {
       const response = await fetch(url, {
@@ -911,6 +1215,7 @@
       renderTrades(stateData);
       renderHealth(stateData);
       renderLiveAccount(stateData);
+      if (!notifPanel.hidden) renderNotifications();
     }
 
     async function refreshHistory() {
