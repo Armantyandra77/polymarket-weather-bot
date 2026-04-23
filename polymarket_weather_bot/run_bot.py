@@ -33,6 +33,7 @@ def run_forever():
     port = int(os.getenv('BOT_PORT', '8080'))
     poll_seconds = int(os.getenv('BOT_POLL_SECONDS', '300'))
     control_poll_seconds = int(os.getenv('BOT_CONTROL_POLL_SECONDS', '20'))
+    account_sync_seconds = int(os.getenv('BOT_ACCOUNT_SYNC_SECONDS', '15'))
     min_volume = float(os.getenv('BOT_MIN_VOLUME', '5000'))
     max_spread = float(os.getenv('BOT_MAX_SPREAD', '0.08'))
     edge_threshold = float(os.getenv('BOT_EDGE_THRESHOLD', '0.10'))
@@ -86,8 +87,35 @@ def run_forever():
                     pass
                 time.sleep(control_poll_seconds)
 
+    def account_worker():
+        while True:
+            try:
+                if account_sync is None or not account_sync.enabled():
+                    time.sleep(account_sync_seconds)
+                    continue
+                live_account = account_sync.sync()
+                snapshot = store.get_last_snapshot() or {}
+                merged = dict(snapshot)
+                merged['mode'] = mode
+                merged['timestamp'] = datetime.now(timezone.utc).isoformat()
+                merged['live_account'] = live_account
+                merged.setdefault('controls', store.get_controls())
+                merged.setdefault('alerts', notifier.health())
+                store.save_snapshot(merged)
+                time.sleep(account_sync_seconds)
+            except Exception as e:
+                payload = {'error': str(e), 'stage': 'account_sync_loop'}
+                store.save_error(payload)
+                try:
+                    notifier.notify_error(str(e), payload)
+                except Exception:
+                    pass
+                time.sleep(account_sync_seconds)
+
     t = threading.Thread(target=worker, daemon=True)
     t.start()
+    account_t = threading.Thread(target=account_worker, daemon=True)
+    account_t.start()
     return store, engine
 
 

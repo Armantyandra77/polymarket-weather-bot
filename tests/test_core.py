@@ -24,7 +24,7 @@ def test_probability_helpers():
 
 
 def test_strategy_builds_signal_for_weather_market(monkeypatch):
-    s = WeatherStrategy(min_volume=1000, max_spread=0.5, edge_threshold=0.01)
+    s = WeatherStrategy(min_volume=1000, max_spread=0.5, edge_threshold=0.01, max_days_out=5000)
     market = Market(
         id='1',
         question='Will Seoul be between 17°C and 18°C on 2030-04-17?',
@@ -53,6 +53,52 @@ def test_strategy_builds_signal_for_weather_market(monkeypatch):
     signal = res['signal']
     assert signal.market_id == '1'
     assert signal.action in ('BUY_YES', 'BUY_NO', 'HOLD')
+
+
+def test_strategy_honors_city_and_term_filters(monkeypatch):
+    monkeypatch.setenv('BOT_ALLOWED_CITIES', 'Seoul,Tokyo')
+    monkeypatch.setenv('BOT_BLOCKED_TERMS', 'humidity,rain')
+    s = WeatherStrategy(min_volume=1000, max_spread=0.5, edge_threshold=0.01, max_days_out=5000)
+
+    allowed_market = Market(
+        id='2',
+        question='Will Seoul be between 17°C and 18°C on 2030-04-17?',
+        slug='seoul-weather',
+        condition_id='0xabc',
+        yes_price=0.20,
+        no_price=0.80,
+        volume=10000,
+        liquidity=5000,
+        active=True,
+        closed=False,
+        end_date='2030-04-17T00:00:00Z',
+    )
+    blocked_market = Market(
+        id='3',
+        question='Will Seoul humidity be above 70% on 2030-04-17?',
+        slug='seoul-humidity',
+        condition_id='0xdef',
+        yes_price=0.20,
+        no_price=0.80,
+        volume=10000,
+        liquidity=5000,
+        active=True,
+        closed=False,
+        end_date='2030-04-17T00:00:00Z',
+    )
+
+    monkeypatch.setattr('polymarket_weather_bot.strategy.geocode_city', lambda city: {'latitude': 1.0, 'longitude': 2.0})
+    monkeypatch.setattr('polymarket_weather_bot.strategy.forecast_city', lambda lat, lon: {
+        'daily': {
+            'time': ['2030-04-17'],
+            'temperature_2m_mean': [17.5],
+            'temperature_2m_max': [20.0],
+            'temperature_2m_min': [15.0],
+        }
+    })
+
+    assert s.analyze_market(allowed_market)['skip'] is False
+    assert s.analyze_market(blocked_market)['reason'] == 'blocked_term'
 
 
 def test_live_account_config_reads_session_hint(monkeypatch):

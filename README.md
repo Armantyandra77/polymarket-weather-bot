@@ -59,10 +59,15 @@ The backend on the VPS stays responsible for the bot loop and `/api/state`.
 - `BOT_PORT` — dashboard port (default: `8080`)
 - `BOT_POLL_SECONDS` — scan interval (default: `300`)
 - `BOT_CONTROL_POLL_SECONDS` — idle/pause control loop interval (default: `20`)
+- `BOT_ACCOUNT_SYNC_SECONDS` — live Polymarket account refresh interval for open orders / portfolio sync (default: `15`)
 - `BOT_MIN_VOLUME` — minimum market volume (default: `5000`)
 - `BOT_MAX_SPREAD` — maximum spread to consider (default: `0.08`)
 - `BOT_EDGE_THRESHOLD` — minimum edge to enter (default: `0.10`)
 - `BOT_MAX_POSITIONS` — max open positions (default: `3`)
+- `BOT_ALLOWED_CITIES` — optional comma-separated city allowlist; if set, only those cities can trade
+- `BOT_BLOCKED_CITIES` — optional comma-separated city denylist
+- `BOT_ALLOWED_TERMS` — optional comma-separated keyword allowlist matched against the market question
+- `BOT_BLOCKED_TERMS` — optional comma-separated keyword denylist matched against the market question
 - `BOT_MODE` — `paper` (default) or `live` for live CLOB execution
 - `BOT_LIVE_ORDER_STYLE` — `market` (default) or `limit`
 - `BOT_LIVE_MIN_ORDER_USD` — skip live entries below this size (default: `1`)
@@ -105,3 +110,4 @@ The backend on the VPS stays responsible for the bot loop and `/api/state`.
 - If Polymarket login is done via Gmail/Google, export the logged-in session's proxy address as `BOT_POLYMARKET_SESSION_HINT` or `BOT_POLYMARKET_PROXY_ADDRESS`; the bot does not need the Gmail password.
 - The system is designed to keep noise low and only surface tradable situations.
 - If the weather market question cannot be parsed confidently, the market is skipped.
+- To make the bot trade automatically with your own rules, set the strategy env vars above or tell me the exact rule set and I can encode it into the strategy layer.

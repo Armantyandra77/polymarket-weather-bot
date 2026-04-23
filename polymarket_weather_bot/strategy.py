@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -24,6 +25,20 @@ class WeatherStrategy:
         self.edge_threshold = edge_threshold
         self.max_positions = max_positions
         self.max_days_out = max_days_out
+        self.allowed_cities = self._parse_csv_env('BOT_ALLOWED_CITIES')
+        self.blocked_cities = self._parse_csv_env('BOT_BLOCKED_CITIES')
+        self.allowed_terms = self._parse_csv_env('BOT_ALLOWED_TERMS')
+        self.blocked_terms = self._parse_csv_env('BOT_BLOCKED_TERMS')
+
+    @staticmethod
+    def _parse_csv_env(name: str) -> List[str]:
+        raw = os.getenv(name, '')
+        return [part.strip().lower() for part in raw.split(',') if part.strip()]
+
+    @staticmethod
+    def _matches_any(text: str, needles: List[str]) -> bool:
+        lowered = text.lower()
+        return any(needle in lowered for needle in needles)
 
     def analyze_market(self, market: Market) -> Dict[str, Any]:
         meta = parse_market_question(market.question)
@@ -45,6 +60,18 @@ class WeatherStrategy:
         today = datetime.now(timezone.utc).date()
         if end_date < today:
             return {"skip": True, "reason": "market_expired", "meta": meta}
+        days_out = (end_date - today).days
+        if days_out > self.max_days_out:
+            return {"skip": True, "reason": "too_far_out", "meta": {**meta, "days_out": days_out}}
+
+        if self.blocked_cities and self._matches_any(city, self.blocked_cities):
+            return {"skip": True, "reason": "blocked_city", "meta": {**meta, "city": city}}
+        if self.allowed_cities and not self._matches_any(city, self.allowed_cities):
+            return {"skip": True, "reason": "city_not_allowed", "meta": {**meta, "city": city}}
+        if self.blocked_terms and self._matches_any(market.question, self.blocked_terms):
+            return {"skip": True, "reason": "blocked_term", "meta": {**meta, "question": market.question}}
+        if self.allowed_terms and not self._matches_any(market.question, self.allowed_terms):
+            return {"skip": True, "reason": "term_not_allowed", "meta": {**meta, "question": market.question}}
 
         geocoded = geocode_city(city)
         if not geocoded:
