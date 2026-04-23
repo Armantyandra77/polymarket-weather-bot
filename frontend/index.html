@@ -99,7 +99,18 @@
     .topbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 4px 10px 4px; margin: 0 18px 4px; }
     .topbar-left, .topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .lang { color: #344054; font-size: 13px; padding: 6px 10px; border-radius: 12px; border: 1px solid rgba(148,163,184,0.16); background: rgba(255,255,255,0.72); }
-    .icon-btn { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; border: 1px solid rgba(148,163,184,0.16); background: rgba(255,255,255,0.72); color: #475467; }
+    .icon-btn { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; border: 1px solid rgba(148,163,184,0.16); background: rgba(255,255,255,0.72); color: #475467; position: relative; }
+    .icon-badge {
+      position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; display: grid; place-items: center;
+      background: #ef4444; color: #fff; font-size: 10px; font-weight: 800; box-shadow: 0 8px 20px rgba(239,68,68,0.24);
+    }
+    .pagebar {
+      margin: 0 18px 12px; padding: 12px 16px; border-radius: 18px; border: 1px solid rgba(148,163,184,0.18);
+      background: rgba(255,255,255,0.78); box-shadow: 0 10px 24px rgba(15,23,42,0.05); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    }
+    .pagebar-title { font-size: 15px; font-weight: 750; color: #101828; }
+    .pagebar-note { color: var(--muted); font-size: 13px; margin-top: 3px; }
+    .pagebar-meta { color: #667085; font-size: 12px; }
     .search {
       min-width: 280px; height: 40px; padding: 0 14px; border-radius: 12px; border: 1px solid rgba(148,163,184,0.16);
       background: rgba(255,255,255,0.82); color: #101828; outline: none;
@@ -356,17 +367,28 @@
           <span class="lang" id="lang-label">English</span>
         </div>
         <div class="topbar-right">
-          <button class="icon-btn" type="button" aria-label="Notifications" id="btn-notifications">🔔</button>
+          <button class="icon-btn" type="button" aria-label="Notifications" id="btn-notifications">🔔<span class="icon-badge" id="notif-badge" hidden>0</span></button>
           <input class="search" type="search" placeholder="Search or type..." id="search-input" />
         </div>
       </div>
 
       <div class="notif-panel" id="notif-panel" hidden>
         <div class="notif-head">
-          <div class="notif-title" id="notif-title">Notifications</div>
-          <div class="small-note" id="notif-note">Latest live alerts and updates</div>
+          <div>
+            <div class="notif-title" id="notif-title">Notifications</div>
+            <div class="small-note" id="notif-note">Latest live alerts and updates</div>
+          </div>
+          <button class="icon-btn" type="button" id="notif-close" aria-label="Close notifications">✕</button>
         </div>
         <div class="notif-list" id="notif-list"></div>
+      </div>
+
+      <div class="pagebar" id="pagebar">
+        <div>
+          <div class="pagebar-title" id="pagebar-title">Dashboard</div>
+          <div class="pagebar-note" id="pagebar-note">Overview of live positions, signals, and account sync.</div>
+        </div>
+        <div class="pagebar-meta" id="pagebar-meta">0 visible items</div>
       </div>
 
       <div class="shell">
@@ -562,8 +584,19 @@
     const notifPanel = document.getElementById('notif-panel');
     const notifList = document.getElementById('notif-list');
     const notifBtn = document.getElementById('btn-notifications');
+    const notifCloseBtn = document.getElementById('notif-close');
     let currentView = (location.hash || '#dashboard').replace('#', '') || 'dashboard';
     let currentLang = localStorage.getItem('polyweather.lang') || 'en';
+    const PAGE_META = {
+      dashboard: { title: 'Dashboard', note: 'Overview of live positions, signals, and account sync.' },
+      signals: { title: 'Signals', note: 'Noise-filtered weather signals and edge candidates.' },
+      positions: { title: 'Positions', note: 'Live positions currently open on Polymarket.' },
+      trades: { title: 'Trades', note: 'Executed trades, fills, and order lifecycle.' },
+      account: { title: 'Account', note: 'Wallet, balances, open orders, and auth readiness.' },
+      analytics: { title: 'Analytics', note: 'PnL, drawdown, and portfolio performance snapshots.' },
+      settings: { title: 'Settings', note: 'Controls, health, refresh cadence, and scan actions.' },
+      helps: { title: 'Helps', note: 'Quick guide for using the dashboard.' },
+    };
 
     const COPY = {
       en: {
@@ -611,6 +644,16 @@
         searchPlaceholder: 'Search or type...',
         footerSource: 'Data source: Polymarket public API + Open-Meteo. Controls via /api/control.',
         footerVercel: 'Vercel-ready: host this folder and append ?api=https://YOUR-VPS-DOMAIN.',
+        pagebar: {
+          dashboard: { title: 'Dashboard', note: 'Overview of live positions, signals, and account sync.' },
+          signals: { title: 'Signals', note: 'Noise-filtered weather signals and edge candidates.' },
+          positions: { title: 'Positions', note: 'Live positions currently open on Polymarket.' },
+          trades: { title: 'Trades', note: 'Executed trades, fills, and order lifecycle.' },
+          account: { title: 'Account', note: 'Wallet, balances, open orders, and auth readiness.' },
+          analytics: { title: 'Analytics', note: 'PnL, drawdown, and portfolio performance snapshots.' },
+          settings: { title: 'Settings', note: 'Controls, health, refresh cadence, and scan actions.' },
+          helps: { title: 'Helps', note: 'Quick guide for using the dashboard.' },
+        },
       },
       id: {
         langLabel: 'Bahasa Indonesia',
@@ -657,8 +700,51 @@
         searchPlaceholder: 'Cari atau ketik...',
         footerSource: 'Sumber data: Polymarket public API + Open-Meteo. Kontrol lewat /api/control.',
         footerVercel: 'Siap Vercel: host folder ini dan tambahkan ?api=https://YOUR-VPS-DOMAIN.',
+        pagebar: {
+          dashboard: { title: 'Dasbor', note: 'Ringkasan posisi live, sinyal, dan sinkron akun.' },
+          signals: { title: 'Sinyal', note: 'Sinyal cuaca yang sudah difilter dan kandidat edge.' },
+          positions: { title: 'Posisi', note: 'Posisi live yang sedang terbuka di Polymarket.' },
+          trades: { title: 'Trade', note: 'Trade tereksekusi, fill, dan lifecycle order.' },
+          account: { title: 'Akun', note: 'Wallet, balance, open order, dan readiness auth.' },
+          analytics: { title: 'Analitik', note: 'PnL, drawdown, dan snapshot performa portofolio.' },
+          settings: { title: 'Pengaturan', note: 'Kontrol, kesehatan, cadence refresh, dan aksi scan.' },
+          helps: { title: 'Bantuan', note: 'Panduan singkat untuk memakai dashboard.' },
+        },
       },
     };
+
+    function pageTitle(view) {
+      return COPY[currentLang]?.pagebar?.[view]?.title || PAGE_META[view]?.title || 'Dashboard';
+    }
+
+    function pageNote(view) {
+      return COPY[currentLang]?.pagebar?.[view]?.note || PAGE_META[view]?.note || '';
+    }
+
+    function updatePagebar(view = currentView, visibleCount = null) {
+      setText('pagebar-title', pageTitle(view));
+      setText('pagebar-note', pageNote(view));
+      if (visibleCount !== null) {
+        setText('pagebar-meta', `${visibleCount} visible item${visibleCount === 1 ? '' : 's'}`);
+      }
+    }
+
+    function updateNotifBadge(count = 0) {
+      const badge = document.getElementById('notif-badge');
+      if (!badge) return;
+      badge.hidden = count <= 0;
+      badge.textContent = String(count > 99 ? '99+' : count);
+    }
+
+    function visibleCardCount(view = currentView) {
+      const page = getPages().find(p => !p.hidden) || getPages().find(p => p.dataset.page === view) || null;
+      if (!page) return 0;
+      return Array.from(page.querySelectorAll('.card')).filter(card => !card.hidden).length;
+    }
+
+    function updateSearchMeta() {
+      updatePagebar(currentView, visibleCardCount(currentView));
+    }
 
     function esc(value) {
       return String(value ?? '')
@@ -754,6 +840,7 @@
       }
       searchInput.placeholder = copy.searchPlaceholder;
       langButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.lang === currentLang));
+      updatePagebar(currentView, visibleCardCount(currentView));
     }
 
     function setView(view, push = true) {
@@ -768,6 +855,7 @@
         location.hash = next;
       }
       window.scrollTo(0, 0);
+      updatePagebar(next);
       applySearch();
     }
 
@@ -781,7 +869,9 @@
       trades.forEach(tr => items.push({ tone: 'trade', text: `${tr.side || 'Trade'} • ${tr.quantity || ''} @ ${pct(tr.price || 0)}` }));
       if (!items.length) items.push({ tone: 'signal', text: 'No recent notifications yet.' });
       notifList.innerHTML = items.map(item => `<div class="notif-item ${item.tone}">${esc(item.text)}</div>`).join('');
+      updateNotifBadge(items.length);
     }
+
 
     function applySearch() {
       const q = (searchInput.value || '').trim().toLowerCase();
@@ -789,14 +879,18 @@
       const active = pages.find(page => !page.hidden) || null;
       if (!active) return;
       const cards = active.querySelectorAll('.card');
+      let matches = 0;
       cards.forEach(card => {
         if (!q) {
           card.hidden = false;
+          matches += 1;
           return;
         }
         const text = card.innerText.toLowerCase();
         card.hidden = !text.includes(q);
+        if (!card.hidden) matches += 1;
       });
+      updatePagebar(currentView, matches);
     }
 
     function toggleNotifications(force) {
@@ -832,12 +926,16 @@
         });
       });
       notifBtn.addEventListener('click', () => toggleNotifications());
+      notifCloseBtn?.addEventListener('click', () => toggleNotifications(false));
       searchInput.addEventListener('input', () => applySearch());
       window.addEventListener('hashchange', () => setView(readHashView(), false));
       document.addEventListener('click', (event) => {
         if (!notifPanel.hidden && !notifPanel.contains(event.target) && event.target !== notifBtn) {
           notifPanel.hidden = true;
         }
+      });
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') notifPanel.hidden = true;
       });
     }
 
@@ -846,6 +944,7 @@
       applyLanguage(currentLang);
       bindNavigation();
       setView(readHashView(), false);
+      updatePagebar(readHashView());
     }
 
     window.__setView = setView;
@@ -1215,7 +1314,8 @@
       renderTrades(stateData);
       renderHealth(stateData);
       renderLiveAccount(stateData);
-      if (!notifPanel.hidden) renderNotifications();
+      updatePagebar(currentView, visibleCardCount(currentView));
+      renderNotifications();
     }
 
     async function refreshHistory() {
