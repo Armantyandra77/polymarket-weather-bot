@@ -53,6 +53,69 @@ def test_strategy_builds_signal_for_weather_market(monkeypatch):
     assert signal.action in ('BUY_YES', 'BUY_NO', 'HOLD')
 
 
+def test_live_account_config_reads_session_hint(monkeypatch):
+    monkeypatch.delenv('BOT_POLYMARKET_WALLET_ADDRESS', raising=False)
+    monkeypatch.delenv('BOT_POLYMARKET_PROXY_ADDRESS', raising=False)
+    monkeypatch.setenv('BOT_POLYMARKET_SESSION_HINT', '{"proxyAddress":"0x1234567890abcdef1234567890abcdef12345678","authenticationType":"magic"}')
+    config = PolymarketAccountConfig.from_env()
+    assert config.proxy_address == '0x1234567890abcdef1234567890abcdef12345678'
+    assert config.wallet_address == '0x1234567890abcdef1234567890abcdef12345678'
+    assert config.authentication_type == 'magic'
+
+
+def test_live_account_sync_uses_session_proxy_address(monkeypatch):
+    monkeypatch.setattr('polymarket_weather_bot.account._get_onchain_usdc_balance', lambda addr: 3.69)
+
+    def fake_http_get(url, params=None, timeout=25):
+        if 'public-profile' in url:
+            assert params == {'address': '0x1234567890abcdef1234567890abcdef12345678'}
+            return {
+                'name': 'King Proxy',
+                'pseudonym': 'king-session',
+                'xUsername': 'kingsession',
+                'proxyWallet': '0xProxySession',
+                'verifiedBadge': False,
+            }
+        if '/positions' in url:
+            assert params == {'user': '0x1234567890abcdef1234567890abcdef12345678', 'limit': 100}
+            return [
+                {
+                    'title': 'Will Toronto be below 12°C on 2026-04-24?',
+                    'slug': 'toronto-weather',
+                    'conditionId': '0xabc',
+                    'outcome': 'YES',
+                    'size': '4.5',
+                    'avgPrice': '0.0625',
+                    'currentValue': '0.2',
+                    'cashPnl': '0.05',
+                    'percentPnl': '33.3',
+                    'curPrice': '0.08',
+                }
+            ]
+        if '/value' in url:
+            assert params == {'user': '0x1234567890abcdef1234567890abcdef12345678'}
+            return {'value': '0.2'}
+        raise AssertionError(f'unexpected url {url}')
+
+    sync = PolymarketAccountSync(
+        PolymarketAccountConfig(
+            proxy_address='0x1234567890abcdef1234567890abcdef12345678',
+            authentication_type='magic',
+        ),
+        http_get=fake_http_get,
+    )
+    result = sync.sync()
+    assert result['status'] == 'read_only'
+    assert result['proxy_address'] == '0x1234567890abcdef1234567890abcdef12345678'
+    assert result['authentication_type'] == 'magic'
+    assert result['profile']['name'] == 'King Proxy'
+    assert result['positions_count'] == 1
+    assert result['portfolio_value'] == 0.2
+    assert result['wallet_balance'] == 3.69
+    assert result['equity'] == 3.89
+    assert result['open_orders_count'] == 0
+
+
 def test_live_account_sync_normalizes_profile_positions_and_balance():
     def fake_http_get(url, params=None, timeout=25):
         if 'public-profile' in url:

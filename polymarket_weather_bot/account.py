@@ -8,6 +8,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 DATA_API = "https://data-api.polymarket.com"
@@ -28,6 +29,51 @@ def _truthy(value: Any) -> bool:
     if value is None:
         return False
     return str(value).strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
+def _read_text_env_or_file(value_env: str, file_env: str) -> str | None:
+    value = os.getenv(value_env)
+    if value:
+        return value.strip()
+    path = os.getenv(file_env)
+    if not path:
+        return None
+    try:
+        text = Path(path).expanduser().read_text(encoding="utf-8")
+        return text.strip() or None
+    except Exception:
+        return None
+
+
+def _parse_session_hint(raw: str | None) -> Dict[str, str | None]:
+    if not raw:
+        return {"proxy_address": None, "authentication_type": None}
+
+    text = raw.strip()
+    if not text:
+        return {"proxy_address": None, "authentication_type": None}
+
+    if text.startswith("{"):
+        try:
+            payload = json.loads(text)
+        except Exception:
+            payload = {}
+        proxy_address = payload.get("proxyAddress") or payload.get("proxy_address") or payload.get("address")
+        authentication_type = payload.get("authenticationType") or payload.get("authentication_type") or payload.get("type")
+        return {
+            "proxy_address": proxy_address or None,
+            "authentication_type": authentication_type or None,
+        }
+
+    if ":" in text:
+        maybe_address, maybe_type = text.split(":", 1)
+        if maybe_type:
+            return {
+                "proxy_address": maybe_address.strip() or None,
+                "authentication_type": maybe_type.strip() or None,
+            }
+
+    return {"proxy_address": text, "authentication_type": None}
 
 
 def _get_json(url: str, params: Optional[Dict[str, Any]] = None, timeout: int = 25) -> Any:
@@ -127,7 +173,9 @@ def _get_onchain_usdc_balance(wallet_address: str) -> float:
 @dataclass(frozen=True)
 class PolymarketAccountConfig:
     wallet_address: str | None = None
+    proxy_address: str | None = None
     deposit_address: str | None = None
+    authentication_type: str | None = None
     private_key: str | None = None
     funder_address: str | None = None
     api_key: str | None = None
@@ -142,9 +190,14 @@ class PolymarketAccountConfig:
         wallet_address = os.getenv("BOT_POLYMARKET_WALLET_ADDRESS") or os.getenv("BOT_POLYMARKET_PUBLIC_ADDRESS")
         deposit_address = os.getenv("BOT_POLYMARKET_DEPOSIT_ADDRESS") or os.getenv("BOT_POLYMARKET_SOLANA_ADDRESS")
         funder_address = os.getenv("BOT_POLYMARKET_FUNDER_ADDRESS") or None
+        session_hint = _parse_session_hint(_read_text_env_or_file("BOT_POLYMARKET_SESSION_HINT", "BOT_POLYMARKET_SESSION_HINT_PATH"))
+        proxy_address = os.getenv("BOT_POLYMARKET_PROXY_ADDRESS") or session_hint.get("proxy_address") or None
+        authentication_type = os.getenv("BOT_POLYMARKET_AUTHENTICATION_TYPE") or session_hint.get("authentication_type") or None
         return cls(
-            wallet_address=wallet_address or funder_address,
-            deposit_address=deposit_address or wallet_address or funder_address,
+            wallet_address=wallet_address or proxy_address or funder_address,
+            proxy_address=proxy_address or wallet_address or funder_address,
+            deposit_address=deposit_address or proxy_address or wallet_address or funder_address,
+            authentication_type=authentication_type,
             private_key=os.getenv("BOT_POLYMARKET_PRIVATE_KEY") or None,
             funder_address=funder_address,
             api_key=os.getenv("BOT_POLYMARKET_API_KEY") or None,
@@ -173,7 +226,7 @@ class PolymarketAccountSync:
         return cls(PolymarketAccountConfig.from_env())
 
     def enabled(self) -> bool:
-        return bool(self.config.wallet_address or self.config.private_key or self.config.api_key)
+        return bool(self.config.wallet_address or self.config.proxy_address or self.config.private_key or self.config.api_key)
 
     def _normalize_position(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return {
@@ -245,6 +298,8 @@ class PolymarketAccountSync:
             "enabled": self.enabled(),
             "status": "disabled",
             "wallet_address": self.config.wallet_address,
+            "proxy_address": self.config.proxy_address,
+            "authentication_type": self.config.authentication_type,
             "deposit_address": self.config.deposit_address,
             "profile": {},
             "positions": [],
@@ -260,16 +315,17 @@ class PolymarketAccountSync:
             "synced_at": datetime.now(timezone.utc).isoformat(),
         }
 
-        wallet_address = self.config.wallet_address
-        balance_address = self.config.deposit_address or wallet_address
+        account_address = self.config.proxy_address or self.config.wallet_address
+        wallet_address = self.config.wallet_address or self.config.proxy_address
+        balance_address = self.config.deposit_address or self.config.proxy_address or wallet_address
         if not result["enabled"]:
-            result["warnings"].append("Set BOT_POLYMARKET_WALLET_ADDRESS or BOT_POLYMARKET_FUNDER_ADDRESS to enable live account sync.")
+            result["warnings"].append("Set BOT_POLYMARKET_PROXY_ADDRESS, BOT_POLYMARKET_WALLET_ADDRESS, or BOT_POLYMARKET_FUNDER_ADDRESS to enable live account sync.")
             return result
 
         read_only_ok = False
-        if wallet_address and _is_evm_address(wallet_address):
+        if account_address and _is_evm_address(account_address):
             try:
-                profile = self.http_get(f"{GAMMA_API}/public-profile", {"address": wallet_address})
+                profile = self.http_get(f"{GAMMA_API}/public-profile", {"address": account_address})
                 result["profile"] = {
                     "name": profile.get("name"),
                     "pseudonym": profile.get("pseudonym"),
@@ -284,7 +340,7 @@ class PolymarketAccountSync:
                 result["warnings"].append(f"profile lookup failed: {exc}")
 
             try:
-                positions_raw = self.http_get(f"{DATA_API}/positions", {"user": wallet_address, "limit": 100})
+                positions_raw = self.http_get(f"{DATA_API}/positions", {"user": account_address, "limit": 100})
                 if isinstance(positions_raw, list):
                     result["positions"] = [self._normalize_position(p) for p in positions_raw]
                     result["positions_count"] = len(result["positions"])
@@ -293,7 +349,7 @@ class PolymarketAccountSync:
                 result["warnings"].append(f"positions lookup failed: {exc}")
 
             try:
-                values_raw = self.http_get(f"{DATA_API}/value", {"user": wallet_address})
+                values_raw = self.http_get(f"{DATA_API}/value", {"user": account_address})
                 total_value = 0.0
                 if isinstance(values_raw, list):
                     for item in values_raw:

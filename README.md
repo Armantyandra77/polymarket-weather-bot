@@ -68,6 +68,10 @@ The backend on the VPS stays responsible for the bot loop and `/api/state`.
 - `BOT_TELEGRAM_BOT_TOKEN` — optional Telegram bot token for alerts
 - `BOT_TELEGRAM_CHAT_ID` — optional Telegram chat id for alerts
 - `BOT_POLYMARKET_WALLET_ADDRESS` — wallet/proxy wallet address for Polymarket profile / CLOB auth
+- `BOT_POLYMARKET_PROXY_ADDRESS` — optional authenticated proxy address derived from a logged-in Polymarket session
+- `BOT_POLYMARKET_AUTHENTICATION_TYPE` — optional auth type (`magic` or `eoa`) when using a session-derived proxy address
+- `BOT_POLYMARKET_SESSION_HINT` — optional session hint string or JSON, e.g. `0xabc...123:magic` or `{"proxyAddress":"0xabc...123","authenticationType":"magic"}`
+- `BOT_POLYMARKET_SESSION_HINT_PATH` — optional file path whose contents are used as `BOT_POLYMARKET_SESSION_HINT`
 - `BOT_POLYMARKET_FUNDER_ADDRESS` — fallback wallet address if `BOT_POLYMARKET_WALLET_ADDRESS` is not set
 - `BOT_POLYMARKET_DEPOSIT_ADDRESS` — optional Solana deposit address used for wallet balance lookup when deposits are on Solana
 - `BOT_POLYMARKET_PRIVATE_KEY` — wallet private key for authenticated balance / open orders sync
@@ -93,5 +97,6 @@ The backend on the VPS stays responsible for the bot loop and `/api/state`.
 
 - Live Polymarket execution is intentionally left as a guarded stub.
 - Live account sync can show portfolio, balance, and open positions when the Polymarket wallet/credentials env vars are set.
+- If Polymarket login is done via Gmail/Google, export the logged-in session's proxy address as `BOT_POLYMARKET_SESSION_HINT` or `BOT_POLYMARKET_PROXY_ADDRESS`; the bot does not need the Gmail password.
 - The system is designed to keep noise low and only surface tradable situations.
 - If the weather market question cannot be parsed confidently, the market is skipped.
