@@ -249,6 +249,24 @@ class PolymarketAccountSync:
             "raw": payload,
         }
 
+    def _normalize_order(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        status = str(payload.get("status") or payload.get("state") or payload.get("orderStatus") or "unknown").lower()
+        created_at = payload.get("createdAt") or payload.get("created_at") or payload.get("placedAt") or payload.get("timestamp")
+        updated_at = payload.get("updatedAt") or payload.get("updated_at") or payload.get("updateTime") or created_at or datetime.now(timezone.utc).isoformat()
+        return {
+            "id": payload.get("orderID") or payload.get("orderId") or payload.get("id"),
+            "market_id": payload.get("market") or payload.get("market_id") or payload.get("slug") or payload.get("conditionId"),
+            "token_id": payload.get("asset_id") or payload.get("assetId") or payload.get("token_id") or payload.get("tokenId"),
+            "side": payload.get("side") or payload.get("outcome") or payload.get("direction") or payload.get("orderSide"),
+            "price": float(payload.get("price") or payload.get("limitPrice") or payload.get("avgPrice") or 0),
+            "size": float(payload.get("size") or payload.get("originalSize") or payload.get("quantity") or 0),
+            "filled_size": float(payload.get("filledSize") or payload.get("filled_size") or payload.get("sizeMatched") or 0),
+            "status": status,
+            "created_at": created_at,
+            "updated_at": updated_at,
+            "raw": payload,
+        }
+
     def _build_client(self):
         if self._client is not None:
             return self._client
@@ -310,6 +328,9 @@ class PolymarketAccountSync:
             "balance": {},
             "open_orders_count": 0,
             "open_orders": [],
+            "order_history_count": 0,
+            "order_history": [],
+            "order_source": "clob-open-orders",
             "trading_ready": False,
             "auth_layers": {
                 "l1_private_key": bool(self.config.private_key),
@@ -408,8 +429,11 @@ class PolymarketAccountSync:
                 try:
                     orders = client.get_orders(OpenOrderParams())
                     if isinstance(orders, list):
-                        result["open_orders"] = orders
-                        result["open_orders_count"] = len(orders)
+                        normalized_orders = [self._normalize_order(order) if isinstance(order, dict) else {"raw": order} for order in orders]
+                        result["open_orders"] = normalized_orders
+                        result["order_history"] = normalized_orders
+                        result["open_orders_count"] = len(normalized_orders)
+                        result["order_history_count"] = len(normalized_orders)
                 except Exception as exc:
                     result["warnings"].append(f"open orders lookup failed: {exc}")
                 result["status"] = "connected"

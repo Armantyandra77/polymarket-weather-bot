@@ -77,6 +77,19 @@ class Store:
                     payload TEXT,
                     created_at TEXT
                 );
+                CREATE TABLE IF NOT EXISTS account_order_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source TEXT,
+                    payload TEXT,
+                    created_at TEXT
+                );
+                CREATE TABLE IF NOT EXISTS account_order_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    order_id TEXT,
+                    event_type TEXT,
+                    payload TEXT,
+                    created_at TEXT
+                );
                 CREATE TABLE IF NOT EXISTS snapshots (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     payload TEXT,
@@ -187,6 +200,30 @@ class Store:
                 ),
             )
 
+    def save_account_order_snapshot(self, payload: Dict[str, Any], source: str = 'live'):
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO account_order_snapshots (source, payload, created_at) VALUES (?, ?, ?)",
+                (
+                    source,
+                    json.dumps(payload, ensure_ascii=False),
+                    payload.get('created_at') or datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+
+    def save_account_order_events(self, events: Iterable[Dict[str, Any]]):
+        with self._connect() as conn:
+            for event in events:
+                conn.execute(
+                    "INSERT INTO account_order_events (order_id, event_type, payload, created_at) VALUES (?, ?, ?, ?)",
+                    (
+                        str(event.get('order_id') or ''),
+                        str(event.get('event_type') or 'updated'),
+                        json.dumps(event, ensure_ascii=False),
+                        event.get('created_at') or datetime.now(timezone.utc).isoformat(),
+                    ),
+                )
+
     def save_snapshot(self, payload: Dict[str, Any]):
         with self._connect() as conn:
             conn.execute(
@@ -258,6 +295,16 @@ class Store:
     def get_signal_outcomes(self, limit: int = 100) -> List[Dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute("SELECT payload FROM signal_outcomes ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            return [json.loads(r[0]) for r in rows]
+
+    def get_account_order_snapshots(self, limit: int = 50) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT payload FROM account_order_snapshots ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            return [json.loads(r[0]) for r in rows]
+
+    def get_account_order_events(self, limit: int = 50) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT payload FROM account_order_events ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
             return [json.loads(r[0]) for r in rows]
 
     def get_signals(self, limit: int = 100) -> List[Dict[str, Any]]:

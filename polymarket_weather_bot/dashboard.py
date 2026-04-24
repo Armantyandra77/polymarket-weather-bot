@@ -124,6 +124,8 @@ class DashboardState:
         market_scans = self.store.get_market_scans(12)
         forecasts = self.store.get_forecast_snapshots(12)
         signal_outcomes = self.store.get_signal_outcomes(12)
+        order_snapshots = self.store.get_account_order_snapshots(12)
+        order_events = self.store.get_account_order_events(12)
 
         return {
             'mode': snapshot.get('mode', os.getenv('BOT_MODE', 'paper')),
@@ -153,6 +155,8 @@ class DashboardState:
             'latest_market_scans': market_scans,
             'latest_forecast_snapshots': forecasts,
             'latest_signal_outcomes': signal_outcomes,
+            'latest_account_order_snapshots': order_snapshots,
+            'latest_account_order_events': order_events,
             'health': {
                 'paused': _truthy(controls.get('paused', False)),
                 'force_scan': _truthy(controls.get('force_scan', False)),

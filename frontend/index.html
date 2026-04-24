@@ -543,6 +543,9 @@
         <div class="account-table-wrap">
           <table class="account-table" id="account-positions"></table>
         </div>
+        <div class="account-table-wrap" style="margin-top:14px;">
+          <table class="account-table" id="order-history-table"></table>
+        </div>
       </div>
 
       <div class="panel-grid">
@@ -1319,6 +1322,7 @@
 
       const warnings = (account.warnings || []).slice(0, 2);
       const errors = (account.errors || []).slice(0, 2);
+      const orderEvents = (data.latest_account_order_events || []).slice(0, 8);
       document.getElementById('account-profile').innerHTML = `
         <div class="account-profile-top">
           <div>
@@ -1363,7 +1367,7 @@
       `;
 
       document.getElementById('account-note').textContent = account.enabled
-        ? `Sync status: ${status} • ${positionsCount} position(s) • ${openOrders} open order(s) • equity ${money(equity)} • auth ${authType}`
+        ? `Sync status: ${status} • ${positionsCount} position(s) • ${openOrders} open order(s) • ${orderEvents.length} update(s) • equity ${money(equity)} • auth ${authType}`
         : 'No live account config yet. Set wallet/proxy/session + credentials to enable sync.';
 
       document.getElementById('account-positions').innerHTML = positions.length ? `
@@ -1403,6 +1407,83 @@
             <td colspan="7">
               <div class="account-positions-empty">Belum ada posisi live yang berhasil disinkronkan.</div>
             </td>
+          </tr>
+        </tbody>
+      `;
+
+      const orderHistory = [
+        ...orderEvents.map(event => ({
+          id: event.order_id || `${event.event_type}-${event.created_at}`,
+          market_id: event.payload?.after?.market_id || event.payload?.before?.market_id || event.payload?.market_id || event.order_id,
+          title: event.payload?.after?.question || event.payload?.before?.question || event.payload?.question || event.payload?.after?.title || event.payload?.before?.title || event.payload?.title || 'Order event',
+          slug: event.payload?.after?.slug || event.payload?.before?.slug || event.payload?.slug,
+          side: event.event_type,
+          price: event.payload?.after?.price ?? event.payload?.price ?? event.payload?.before?.price ?? 0,
+          size: event.payload?.after?.size ?? event.payload?.size ?? event.payload?.before?.size ?? 0,
+          status: event.event_type,
+          created_at: event.created_at,
+          updated_at: event.created_at,
+          raw: event,
+          __source: 'order_event',
+        })),
+        ...(account.order_history || []).map(order => ({ ...order, __source: 'open_order' })),
+        ...(data.live_trades || []).map(trade => ({
+          id: trade.order_id || `${trade.market_id}-${trade.created_at}`,
+          market_id: trade.market_id,
+          title: trade.question || trade.market_id || 'Live trade',
+          side: trade.side,
+          price: trade.price,
+          size: trade.quantity,
+          status: trade.status || trade.mode || 'filled',
+          created_at: trade.created_at,
+          updated_at: trade.created_at,
+          raw: trade,
+          __source: 'live_trade',
+        })),
+      ];
+      const orderRows = orderHistory.slice(0, 8);
+      document.getElementById('order-history-table').innerHTML = orderRows.length ? `
+        <thead>
+          <tr>
+            <th>Activity</th>
+            <th>Market</th>
+            <th>Value</th>
+            <th>Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${orderRows.map(order => {
+            const raw = order.raw || {};
+            const marketTitle = order.title || raw.question || raw.title || raw.slug || raw.market_id || order.market_id || 'Order';
+            const marketMeta = order.slug || raw.slug || raw.condition_id || order.token_id || order.id || '';
+            const activity = String(order.side || order.status || order.__source || 'order').toUpperCase();
+            const time = order.updated_at || order.created_at || raw.updated_at || raw.created_at || synced;
+            const value = Number(order.current_value ?? (Number(order.price || 0) * Number(order.size || 0)) ?? 0) || 0;
+            return `
+              <tr>
+                <td><span class="pill ${activity === 'BUY' || activity === 'YES' || activity === 'OPEN_ORDER' ? 'good' : activity === 'SELL' || activity === 'CANCELLED' || activity === 'REJECTED' ? 'bad' : 'cyan'}">${esc(activity)}</span></td>
+                <td>
+                  <div class="account-market">${esc(marketTitle)}</div>
+                  <div class="account-subtle mono">${esc(marketMeta)}</div>
+                </td>
+                <td class="mono">${money(value)}</td>
+                <td class="mono">${esc(time ? t(time) : '—')}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      ` : `
+        <thead>
+          <tr>
+            <th>Activity</th>
+            <th>Market</th>
+            <th>Value</th>
+            <th>Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td colspan="4"><div class="account-positions-empty">Belum ada riwayat order live yang tersinkron.</div></td>
           </tr>
         </tbody>
       `;

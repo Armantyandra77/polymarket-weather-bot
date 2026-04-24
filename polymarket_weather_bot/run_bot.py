@@ -95,6 +95,44 @@ def run_forever():
                     continue
                 live_account = account_sync.sync()
                 snapshot = store.get_last_snapshot() or {}
+                prev_live_account = snapshot.get('live_account') if isinstance(snapshot, dict) else {}
+                prev_orders = prev_live_account.get('order_history') or prev_live_account.get('open_orders') or []
+                current_orders = live_account.get('order_history') or live_account.get('open_orders') or []
+                prev_by_id = {str(o.get('id') or o.get('order_id') or o.get('token_id') or idx): o for idx, o in enumerate(prev_orders) if isinstance(o, dict)}
+                curr_by_id = {str(o.get('id') or o.get('order_id') or o.get('token_id') or idx): o for idx, o in enumerate(current_orders) if isinstance(o, dict)}
+                order_events = []
+                now_iso = datetime.now(timezone.utc).isoformat()
+                for order_id, order in curr_by_id.items():
+                    if order_id not in prev_by_id:
+                        order_events.append({
+                            'order_id': order_id,
+                            'event_type': 'created',
+                            'payload': order,
+                            'created_at': order.get('updated_at') or order.get('created_at') or now_iso,
+                        })
+                    else:
+                        prev_order = prev_by_id[order_id]
+                        if json.dumps(prev_order, sort_keys=True, default=str) != json.dumps(order, sort_keys=True, default=str):
+                            order_events.append({
+                                'order_id': order_id,
+                                'event_type': 'updated',
+                                'payload': {'before': prev_order, 'after': order},
+                                'created_at': order.get('updated_at') or now_iso,
+                            })
+                for order_id, order in prev_by_id.items():
+                    if order_id not in curr_by_id:
+                        order_events.append({
+                            'order_id': order_id,
+                            'event_type': 'closed',
+                            'payload': order,
+                            'created_at': now_iso,
+                        })
+                if current_orders:
+                    live_account['order_history'] = current_orders
+                    live_account['order_history_count'] = len(current_orders)
+                store.save_account_order_snapshot({'created_at': now_iso, 'orders': current_orders, 'source': live_account.get('order_source', 'clob-open-orders')}, source=str(live_account.get('order_source', 'clob-open-orders')))
+                if order_events:
+                    store.save_account_order_events(order_events)
                 merged = dict(snapshot)
                 merged['mode'] = mode
                 merged['timestamp'] = datetime.now(timezone.utc).isoformat()

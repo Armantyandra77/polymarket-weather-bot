@@ -214,6 +214,8 @@ def test_live_account_sync_normalizes_profile_positions_and_balance():
     assert result['balance']['balance'] == 12.34
     assert result['open_orders_count'] == 1
     assert result['trading_ready'] is True
+    assert result['order_history_count'] == 1
+    assert result['order_history'][0]['status'] == 'unknown'
 
 
 def test_live_account_sync_supports_solana_deposit_balance(monkeypatch):
@@ -313,6 +315,20 @@ def test_bot_engine_records_market_scan_forecast_and_signal_outcome(monkeypatch,
     assert store.get_market_scans(10)[0]['analysis']['skip'] is False
     assert store.get_forecast_snapshots(10)[0]['forecast']['city'] == 'Seoul'
     assert store.get_signal_outcomes(10)[0]['signal']['action'] == 'BUY_YES'
+
+
+def test_store_persists_order_snapshots_and_events(tmp_path):
+    store = Store(str(tmp_path / 'bot.db'))
+    store.save_account_order_snapshot({'created_at': '2030-04-17T00:00:00Z', 'orders': [{'id': 'o1'}], 'source': 'clob-open-orders'})
+    store.save_account_order_events([
+        {'order_id': 'o1', 'event_type': 'created', 'payload': {'id': 'o1'}, 'created_at': '2030-04-17T00:00:01Z'}
+    ])
+    snapshots = store.get_account_order_snapshots(10)
+    events = store.get_account_order_events(10)
+    assert snapshots[0]['source'] == 'clob-open-orders'
+    assert snapshots[0]['orders'][0]['id'] == 'o1'
+    assert events[0]['event_type'] == 'created'
+    assert events[0]['order_id'] == 'o1'
 
 
 def test_bot_engine_switches_to_live_executor(monkeypatch, tmp_path):
