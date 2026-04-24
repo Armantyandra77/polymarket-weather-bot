@@ -111,14 +111,13 @@ class DashboardState:
         if parsed is not None:
             freshness_seconds = max(0.0, (datetime.now(timezone.utc) - parsed.astimezone(timezone.utc)).total_seconds())
 
-        positions = snapshot.get('positions', self.store.get_positions())
-        trades = snapshot.get('recent_trades', self.store.get_trades(20))
-        signals = snapshot.get('recent_signals', self.store.get_signals(20))
+        positions = snapshot.get('positions') or self.store.get_positions()
+        trades = snapshot.get('recent_trades') or self.store.get_trades(20)
+        signals = snapshot.get('recent_signals') or self.store.get_signals(20)
         recent_errors = self.store.get_errors(12)
         alerts = self._alerts_health(snapshot)
         bot_health = snapshot.get('bot_health') or {}
         live_account = snapshot.get('live_account') or {}
-
         live_mode_active = bool(live_account.get('enabled')) and str(live_account.get('status', '')).lower() in {'connected', 'read_only', 'partial'}
 
         live_positions: List[Dict[str, Any]] = []
@@ -169,7 +168,37 @@ class DashboardState:
         signal_outcomes = self.store.get_signal_outcomes(12)
         order_snapshots = self.store.get_account_order_snapshots(12)
         order_events = self.store.get_account_order_events(12)
+        telegram_commands = self.store.get_telegram_command_history(12)
         forecast_summary = self._forecast_summary(forecasts)
+        calibration_summary = self.store.get_forecast_calibration_summary()
+        open_orders = live_account.get('open_orders') or live_account.get('order_history') or []
+        if not isinstance(open_orders, list):
+            open_orders = []
+        order_activity_summary = {
+            'order_events_count': len(order_events),
+            'open_orders_count': len(open_orders),
+            'live_trades_count': len(live_trades),
+        }
+        latest_account_order_sections = [
+            {
+                'key': 'order_events',
+                'title': 'Order events',
+                'note': 'Lifecycle updates from live account sync and fills.',
+                'count': len(order_events),
+            },
+            {
+                'key': 'open_orders',
+                'title': 'Open orders',
+                'note': 'Resting orders currently visible in the live account.',
+                'count': len(open_orders),
+            },
+            {
+                'key': 'live_trades',
+                'title': 'Live trades',
+                'note': 'Executed trades and fills streamed from the live executor.',
+                'count': len(live_trades),
+            },
+        ]
 
         return {
             'mode': snapshot.get('mode', os.getenv('BOT_MODE', 'paper')),
@@ -196,13 +225,21 @@ class DashboardState:
             'market_scans_count': len(self.store.get_market_scans(1000)),
             'forecast_snapshots_count': len(self.store.get_forecast_snapshots(1000)),
             'signal_outcomes_count': len(self.store.get_signal_outcomes(1000)),
+            'forecast_outcomes_count': len(self.store.get_forecast_outcomes(1000)),
             'latest_market_scans': market_scans,
             'latest_forecast_snapshots': forecasts,
             'latest_signal_outcomes': signal_outcomes,
+            'latest_forecast_outcomes': self.store.get_forecast_outcomes(12),
             'latest_account_order_snapshots': order_snapshots,
             'latest_account_order_events': order_events,
             'forecast_summary': forecast_summary,
             'forecast_sources_summary': forecast_summary,
+            'calibration_summary': calibration_summary,
+            'order_activity_summary': order_activity_summary,
+            'latest_account_order_sections': latest_account_order_sections,
+            'telegram_commands_count': len(telegram_commands),
+            'latest_telegram_commands': telegram_commands,
+            'telegram_command_usage': self.store.get_telegram_command_counts(5),
             'health': {
                 'paused': _truthy(controls.get('paused', False)),
                 'force_scan': _truthy(controls.get('force_scan', False)),
@@ -235,6 +272,16 @@ class DashboardState:
                 'detail': signal.get('rationale', ''),
                 'market_id': signal.get('market_id'),
                 'payload': signal,
+            })
+
+        for command in self.store.get_telegram_command_history(limit):
+            entries.append({
+                'kind': 'command',
+                'created_at': command.get('created_at'),
+                'title': f"/{command.get('command', '')} {command.get('args', '')}".strip(),
+                'detail': command.get('reply_text', ''),
+                'market_id': None,
+                'payload': command,
             })
 
         for err in self.store.get_errors(limit):
@@ -322,11 +369,7 @@ class Handler(BaseHTTPRequestHandler):
         updates: Dict[str, Any] = {}
         for key in ('paused', 'force_scan'):
             if key in payload:
-                value = payload[key]
-                if key == 'force_scan':
-                    updates[key] = _truthy(value)
-                else:
-                    updates[key] = _truthy(value)
+                updates[key] = _truthy(payload[key])
                 self.state.store.set_control(key, updates[key])
 
         if 'pause' in payload and 'paused' not in updates:

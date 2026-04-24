@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
@@ -13,6 +14,7 @@ from .notifier import TelegramNotifier
 from .polymarket import discover_weather_markets
 from .strategy import WeatherStrategy
 from .store import Store
+from .telegram_commands import TelegramCommandService
 
 
 def _truthy(value: Any) -> bool:
@@ -52,6 +54,10 @@ def run_forever():
     account_sync = PolymarketAccountSync.from_env()
     engine = BotEngine(store, strategy, mode=mode, notifier=notifier, account_sync=account_sync)
     serve_dashboard(store, port=port, serve_ui=serve_ui)
+
+    command_service = TelegramCommandService.from_env(store, notifier=notifier)
+    if command_service.enabled:
+        threading.Thread(target=command_service.run_forever, daemon=True).start()
 
     def worker():
         while True:

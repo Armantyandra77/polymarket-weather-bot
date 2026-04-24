@@ -190,9 +190,12 @@ class BotEngine:
         snapshot['market_scans_count'] = len(self.store.get_market_scans(1000))
         snapshot['forecast_snapshots_count'] = len(self.store.get_forecast_snapshots(1000))
         snapshot['signal_outcomes_count'] = len(self.store.get_signal_outcomes(1000))
+        snapshot['forecast_outcomes_count'] = len(self.store.get_forecast_outcomes(1000))
         snapshot['latest_market_scans'] = self.store.get_market_scans(12)
         snapshot['latest_forecast_snapshots'] = self.store.get_forecast_snapshots(12)
         snapshot['latest_signal_outcomes'] = self.store.get_signal_outcomes(12)
+        snapshot['latest_forecast_outcomes'] = self.store.get_forecast_outcomes(12)
+        snapshot['calibration_summary'] = self.store.get_forecast_calibration_summary()
         self.store.save_snapshot(snapshot)
         return snapshot
 

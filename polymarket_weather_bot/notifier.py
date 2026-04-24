@@ -33,19 +33,44 @@ class TelegramNotifier:
             'token_set': bool(self.token),
         }
 
-    def _send(self, text: str) -> None:
-        if not self.enabled:
+    def _request(self, method: str, params: Optional[dict[str, Any]] = None, timeout: int = 15) -> Any:
+        if not self.token:
+            return None
+        url = f'https://api.telegram.org/bot{self.token}/{method}'
+        data = None
+        headers: dict[str, str] = {}
+        if params is not None:
+            data = urllib.parse.urlencode(params, doseq=True).encode('utf-8')
+            headers['Content-Type'] = 'application/x-www-form-urlencoded'
+        req = urllib.request.Request(url, data=data, method='POST' if data is not None else 'GET')
+        for key, value in headers.items():
+            req.add_header(key, value)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode('utf-8')
+            return json.loads(raw) if raw else {}
+
+    def send_message(self, text: str, chat_id: Optional[str] = None) -> None:
+        target_chat_id = (chat_id or self.chat_id).strip()
+        if not self.token or not target_chat_id:
             return
-        payload = urllib.parse.urlencode({
-            'chat_id': self.chat_id,
+        self._request('sendMessage', {
+            'chat_id': target_chat_id,
             'text': text,
             'disable_web_page_preview': 'true',
-        }).encode('utf-8')
-        url = f'https://api.telegram.org/bot{self.token}/sendMessage'
-        req = urllib.request.Request(url, data=payload, method='POST')
-        req.add_header('Content-Type', 'application/x-www-form-urlencoded')
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            resp.read()
+        }, timeout=15)
+
+    def get_updates(self, offset: Optional[int] = None, timeout: int = 25) -> list[dict[str, Any]]:
+        if not self.token:
+            return []
+        params: dict[str, Any] = {'timeout': max(0, int(timeout))}
+        if offset is not None:
+            params['offset'] = int(offset)
+        response = self._request('getUpdates', params, timeout=max(30, timeout + 5)) or {}
+        updates = response.get('result') if isinstance(response, dict) else None
+        return updates if isinstance(updates, list) else []
+
+    def _send(self, text: str) -> None:
+        self.send_message(text)
 
     def notify_signal(self, signal: Signal) -> None:
         if not self.enabled:

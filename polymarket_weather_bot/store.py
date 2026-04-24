@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import sqlite3
 from dataclasses import asdict
@@ -77,6 +78,21 @@ class Store:
                     payload TEXT,
                     created_at TEXT
                 );
+                CREATE TABLE IF NOT EXISTS forecast_outcomes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    market_id TEXT,
+                    forecast_type TEXT,
+                    predicted_value REAL,
+                    actual_value REAL,
+                    predicted_probability REAL,
+                    actual_outcome INTEGER,
+                    absolute_error REAL,
+                    squared_error REAL,
+                    brier_score REAL,
+                    payload TEXT,
+                    created_at TEXT,
+                    resolved_at TEXT
+                );
                 CREATE TABLE IF NOT EXISTS account_order_snapshots (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     source TEXT,
@@ -104,6 +120,19 @@ class Store:
                     key TEXT PRIMARY KEY,
                     value TEXT,
                     updated_at TEXT
+                );
+                CREATE TABLE IF NOT EXISTS telegram_command_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id TEXT,
+                    user_id TEXT,
+                    username TEXT,
+                    command TEXT,
+                    args TEXT,
+                    message_text TEXT,
+                    reply_text TEXT,
+                    status TEXT,
+                    raw_update TEXT,
+                    created_at TEXT
                 );
                 """
             )
@@ -200,6 +229,90 @@ class Store:
                 ),
             )
 
+    def save_forecast_outcome(self, payload: Dict[str, Any]):
+        def _first_number(*values: Any) -> Optional[float]:
+            for value in values:
+                if value is None:
+                    continue
+                try:
+                    return float(value)
+                except Exception:
+                    continue
+            return None
+
+        forecast = payload.get('forecast') or {}
+        outcome = payload.get('outcome') or {}
+        forecast_type = str(payload.get('forecast_type') or outcome.get('type') or 'numeric').strip().lower() or 'numeric'
+        predicted_value = _first_number(
+            payload.get('predicted_value'),
+            forecast.get('expected_temp_c'),
+            forecast.get('mean'),
+            forecast.get('temperature'),
+            forecast.get('value'),
+        )
+        actual_value = _first_number(
+            payload.get('actual_value'),
+            outcome.get('actual_value'),
+            outcome.get('temperature_c'),
+            outcome.get('value'),
+        )
+        predicted_probability = _first_number(
+            payload.get('predicted_probability'),
+            forecast.get('predicted_probability'),
+            forecast.get('model_prob'),
+            forecast.get('probability'),
+        )
+        if predicted_probability is None and predicted_value is not None and 0.0 <= predicted_value <= 1.0:
+            predicted_probability = predicted_value
+        actual_outcome_raw = payload.get('actual_outcome')
+        if actual_outcome_raw is None:
+            actual_outcome_raw = outcome.get('actual_outcome', outcome.get('value'))
+        actual_outcome: Optional[int]
+        if actual_outcome_raw is None:
+            actual_outcome = None
+        else:
+            try:
+                actual_outcome = 1 if float(actual_outcome_raw) >= 0.5 else 0
+            except Exception:
+                actual_outcome = 1 if bool(actual_outcome_raw) else 0
+
+        absolute_error = None
+        squared_error = None
+        if predicted_value is not None and actual_value is not None:
+            absolute_error = abs(predicted_value - actual_value)
+            squared_error = absolute_error ** 2
+
+        brier_score = None
+        if predicted_probability is not None and actual_outcome is not None:
+            brier_score = (predicted_probability - float(actual_outcome)) ** 2
+            forecast_type = 'binary'
+
+        created_at = payload.get('created_at') or datetime.now(timezone.utc).isoformat()
+        resolved_at = payload.get('resolved_at') or created_at
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO forecast_outcomes (
+                    market_id, forecast_type, predicted_value, actual_value, predicted_probability,
+                    actual_outcome, absolute_error, squared_error, brier_score, payload, created_at, resolved_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(payload.get('market_id') or ''),
+                    forecast_type,
+                    predicted_value,
+                    actual_value,
+                    predicted_probability,
+                    actual_outcome,
+                    absolute_error,
+                    squared_error,
+                    brier_score,
+                    json.dumps(payload, ensure_ascii=False),
+                    created_at,
+                    resolved_at,
+                ),
+            )
+
     def save_account_order_snapshot(self, payload: Dict[str, Any], source: str = 'live'):
         with self._connect() as conn:
             conn.execute(
@@ -223,6 +336,66 @@ class Store:
                         event.get('created_at') or datetime.now(timezone.utc).isoformat(),
                     ),
                 )
+
+    def save_telegram_command(self, payload: Dict[str, Any]):
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO telegram_command_history
+                (chat_id, user_id, username, command, args, message_text, reply_text, status, raw_update, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(payload.get('chat_id') or ''),
+                    str(payload.get('user_id') or ''),
+                    str(payload.get('username') or ''),
+                    str(payload.get('command') or ''),
+                    str(payload.get('args') or ''),
+                    str(payload.get('message_text') or ''),
+                    str(payload.get('reply_text') or ''),
+                    str(payload.get('status') or 'handled'),
+                    json.dumps(payload.get('raw_update') or {}, ensure_ascii=False),
+                    payload.get('created_at') or datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+
+    def get_telegram_command_history(self, limit: int = 100) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, chat_id, user_id, username, command, args, message_text, reply_text, status, raw_update, created_at FROM telegram_command_history ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            items: List[Dict[str, Any]] = []
+            for row in rows:
+                try:
+                    raw_update = json.loads(row[9]) if row[9] else {}
+                except Exception:
+                    raw_update = {'raw': row[9]}
+                items.append({
+                    'id': row[0],
+                    'chat_id': row[1],
+                    'user_id': row[2],
+                    'username': row[3],
+                    'command': row[4],
+                    'args': row[5],
+                    'message_text': row[6],
+                    'reply_text': row[7],
+                    'status': row[8],
+                    'raw_update': raw_update,
+                    'created_at': row[10],
+                })
+            return items
+
+    def get_telegram_command_counts(self, limit: int = 10) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT command, COUNT(*) AS count, MAX(created_at) AS last_seen FROM telegram_command_history GROUP BY command ORDER BY count DESC, last_seen DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            return [
+                {'command': row[0], 'count': row[1], 'last_seen': row[2]}
+                for row in rows
+            ]
 
     def save_snapshot(self, payload: Dict[str, Any]):
         with self._connect() as conn:
@@ -296,6 +469,98 @@ class Store:
         with self._connect() as conn:
             rows = conn.execute("SELECT payload FROM signal_outcomes ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
             return [json.loads(r[0]) for r in rows]
+
+    def get_forecast_outcomes(self, limit: int = 100) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, market_id, forecast_type, predicted_value, actual_value, predicted_probability,
+                       actual_outcome, absolute_error, squared_error, brier_score, payload, created_at, resolved_at
+                FROM forecast_outcomes
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+            items: List[Dict[str, Any]] = []
+            for row in rows:
+                try:
+                    payload = json.loads(row[10])
+                except Exception:
+                    payload = {'raw': row[10]}
+                record = payload if isinstance(payload, dict) else {'value': payload}
+                record = {**record}
+                record.setdefault('id', row[0])
+                record.setdefault('market_id', row[1])
+                record.setdefault('forecast_type', row[2])
+                record.setdefault('predicted_value', row[3])
+                record.setdefault('actual_value', row[4])
+                record.setdefault('predicted_probability', row[5])
+                record.setdefault('actual_outcome', row[6])
+                record.setdefault('absolute_error', row[7])
+                record.setdefault('squared_error', row[8])
+                record.setdefault('brier_score', row[9])
+                record.setdefault('created_at', row[11])
+                record.setdefault('resolved_at', row[12])
+                items.append(record)
+            return items
+
+    def get_forecast_calibration_summary(self) -> Dict[str, Any]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT forecast_type, predicted_value, actual_value, predicted_probability, actual_outcome,
+                       absolute_error, squared_error, brier_score, created_at, resolved_at
+                FROM forecast_outcomes
+                ORDER BY id ASC
+                """
+            ).fetchall()
+
+        records_count = len(rows)
+        numeric_count = 0
+        binary_count = 0
+        abs_error_total = 0.0
+        sq_error_total = 0.0
+        brier_total = 0.0
+        accuracy_count = 0
+        resolved_count = 0
+        last_record_at = None
+
+        for row in rows:
+            forecast_type, predicted_value, actual_value, predicted_probability, actual_outcome, absolute_error, squared_error, brier_score, created_at, resolved_at = row
+            if created_at:
+                last_record_at = created_at
+            if resolved_at:
+                resolved_count += 1
+            ft = str(forecast_type or '').lower()
+            if absolute_error is not None or (predicted_value is not None and actual_value is not None):
+                numeric_count += 1
+                abs_error = float(absolute_error if absolute_error is not None else abs(float(predicted_value) - float(actual_value)))
+                sq_error = float(squared_error if squared_error is not None else abs_error ** 2)
+                abs_error_total += abs_error
+                sq_error_total += sq_error
+            if predicted_probability is not None and actual_outcome is not None:
+                binary_count += 1
+                brier = float(brier_score if brier_score is not None else (float(predicted_probability) - float(actual_outcome)) ** 2)
+                brier_total += brier
+                predicted_label = 1 if float(predicted_probability) >= 0.5 else 0
+                accuracy_count += int(predicted_label == int(actual_outcome))
+            elif ft == 'binary' and actual_outcome is not None:
+                binary_count += 1
+                predicted_label = 1 if float(predicted_probability or 0.0) >= 0.5 else 0
+                accuracy_count += int(predicted_label == int(actual_outcome))
+
+        return {
+            'records_count': records_count,
+            'resolved_records_count': resolved_count,
+            'numeric_records_count': numeric_count,
+            'binary_records_count': binary_count,
+            'mae': round(abs_error_total / numeric_count, 4) if numeric_count else 0.0,
+            'rmse': round(math.sqrt(sq_error_total / numeric_count), 4) if numeric_count else 0.0,
+            'accuracy': round(accuracy_count / binary_count, 4) if binary_count else 0.0,
+            'brier_score': round(brier_total / binary_count, 4) if binary_count else 0.0,
+            'last_record_at': last_record_at,
+        }
 
     def get_account_order_snapshots(self, limit: int = 50) -> List[Dict[str, Any]]:
         with self._connect() as conn:

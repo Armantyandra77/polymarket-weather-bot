@@ -7,6 +7,8 @@ from polymarket_weather_bot.dashboard import DashboardState
 from polymarket_weather_bot.bot import BotEngine
 from polymarket_weather_bot.weather_sources import build_forecast_ensemble
 from polymarket_weather_bot.executor import PolymarketLiveExecutor
+from polymarket_weather_bot.notifier import TelegramNotifier
+from polymarket_weather_bot.telegram_commands import TelegramCommandService
 
 
 def test_parse_temperature_range_city():
@@ -292,6 +294,55 @@ def test_dashboard_state_and_controls(tmp_path):
     assert state['market_scans_count'] == 0
     assert state['forecast_snapshots_count'] == 0
     assert state['signal_outcomes_count'] == 0
+    assert state['forecast_outcomes_count'] == 0
+    assert state['calibration_summary']['records_count'] == 0
+
+
+def test_store_and_dashboard_calibration_summary(tmp_path):
+    store = Store(str(tmp_path / 'bot.db'))
+    store.save_forecast_outcome({
+        'market_id': 'm1',
+        'forecast_type': 'numeric',
+        'predicted_value': 10.0,
+        'actual_value': 12.0,
+        'created_at': '2030-04-17T00:00:00Z',
+    })
+    store.save_forecast_outcome({
+        'market_id': 'm2',
+        'forecast_type': 'numeric',
+        'predicted_value': 14.0,
+        'actual_value': 13.0,
+        'created_at': '2030-04-17T01:00:00Z',
+    })
+    store.save_forecast_outcome({
+        'market_id': 'm3',
+        'forecast_type': 'binary',
+        'predicted_probability': 0.8,
+        'actual_outcome': 1,
+        'created_at': '2030-04-17T02:00:00Z',
+    })
+    store.save_forecast_outcome({
+        'market_id': 'm4',
+        'forecast_type': 'binary',
+        'predicted_probability': 0.3,
+        'actual_outcome': 0,
+        'created_at': '2030-04-17T03:00:00Z',
+    })
+
+    summary = store.get_forecast_calibration_summary()
+    assert summary['records_count'] == 4
+    assert summary['numeric_records_count'] == 2
+    assert summary['binary_records_count'] == 2
+    assert summary['mae'] == 1.5
+    assert summary['rmse'] == 1.5811
+    assert summary['accuracy'] == 1.0
+    assert summary['brier_score'] == 0.065
+
+    state = DashboardState(store).current_state()
+    assert state['forecast_outcomes_count'] == 4
+    assert state['calibration_summary']['mae'] == 1.5
+    assert state['calibration_summary']['accuracy'] == 1.0
+    assert len(state['latest_forecast_outcomes']) == 4
 
 
 def test_bot_engine_records_market_scan_forecast_and_signal_outcome(monkeypatch, tmp_path):
@@ -467,4 +518,70 @@ def test_live_executor_places_market_order_and_persists_trade(tmp_path):
     assert trades[0]['mode'] == 'live'
     assert trades[0]['status'] == 'filled'
     assert trades[0]['order_id'] == 'order-123'
+
+
+def test_telegram_command_service_records_history_and_dashboard_state(tmp_path):
+    store = Store(str(tmp_path / 'bot.db'))
+    store.upsert_markets([
+        Market(
+            id='m-top',
+            question='Will Seoul be between 17°C and 18°C on 2030-04-17?',
+            slug='seoul-weather',
+            condition_id='0xabc',
+            yes_price=0.20,
+            no_price=0.80,
+            volume=10000,
+            liquidity=5000,
+            active=True,
+            closed=False,
+            end_date='2030-04-17T00:00:00Z',
+        )
+    ])
+    store.save_snapshot({
+        'mode': 'paper',
+        'positions': [],
+        'recent_signals': [
+            {
+                'market_id': 'm-top',
+                'action': 'BUY_YES',
+                'city': 'Seoul',
+                'edge': 0.10,
+                'question': 'Will Seoul be between 17°C and 18°C on 2030-04-17?',
+            }
+        ],
+        'controls': {'paused': True},
+        'alerts': {'enabled': True, 'chat_id_set': True, 'token_set': True},
+        'timestamp': '2030-04-17T00:00:00Z',
+    })
+
+    class FakeNotifier:
+        def __init__(self):
+            self.token = 'fake-token'
+            self.chat_id = '123'
+            self.sent = []
+
+        def send_message(self, text, chat_id=None):
+            self.sent.append({'chat_id': chat_id or self.chat_id, 'text': text})
+
+        def get_updates(self, offset=None, timeout=25):
+            return []
+
+    service = TelegramCommandService(store, FakeNotifier(), allowed_chat_id='123')
+    assert service.handle_update({'update_id': 1, 'message': {'chat': {'id': '123'}, 'from': {'id': 7, 'username': 'alice'}, 'text': '/top 1'}})
+    assert service.handle_update({'update_id': 2, 'message': {'chat': {'id': '123'}, 'from': {'id': 7, 'username': 'alice'}, 'text': '/city Seoul'}})
+    assert service.handle_update({'update_id': 3, 'message': {'chat': {'id': '123'}, 'from': {'id': 7, 'username': 'alice'}, 'text': '/diag'}})
+
+    assert len(service.notifier.sent) == 3
+    assert 'Top markets' in service.notifier.sent[0]['text']
+    assert 'City summary: Seoul' in service.notifier.sent[1]['text']
+    assert 'Bot diagnostics' in service.notifier.sent[2]['text']
+    assert '/top: 1' in service.notifier.sent[2]['text']
+    assert '/city: 1' in service.notifier.sent[2]['text']
+
+    history = store.get_telegram_command_history(10)
+    assert [row['command'] for row in history[:3]] == ['diag', 'city', 'top']
+    state = DashboardState(store).current_state()
+    assert state['telegram_commands_count'] == 3
+    assert state['latest_telegram_commands'][0]['command'] == 'diag'
+    assert state['telegram_command_usage'][0]['command'] == 'diag'
 

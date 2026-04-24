@@ -365,6 +365,93 @@
     .account-table th:nth-child(5), .account-table td:nth-child(5) { background: rgba(39, 194, 106, 0.03); }
     .account-table th:nth-child(6), .account-table td:nth-child(6) { background: rgba(39, 194, 106, 0.03); }
     .account-table th:nth-child(7), .account-table td:nth-child(7) { background: rgba(119, 148, 255, 0.03); }
+    .account-table-wrap {
+      margin-top: 12px;
+      overflow-x: auto;
+      border-radius: 20px;
+      border: 1px solid rgba(148,163,184,0.20);
+      background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.96));
+      box-shadow: 0 16px 32px rgba(15,23,42,0.07);
+    }
+    .account-table-wrap table { background: transparent; }
+    .account-table thead th { box-shadow: inset 0 -1px 0 rgba(148,163,184,0.10); }
+    .account-table tbody tr:last-child td { border-bottom: 0; }
+    .account-table tbody tr:hover td { background: rgba(248,250,252,0.92); }
+    .account-history-stack { display: grid; gap: 14px; margin-top: 14px; }
+    .account-history-section {
+      border-radius: 20px;
+      border: 1px solid rgba(148,163,184,0.18);
+      background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.98));
+      box-shadow: 0 14px 28px rgba(15,23,42,0.06);
+      overflow: hidden;
+    }
+    .account-history-head {
+      padding: 16px 18px 12px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      border-bottom: 1px solid rgba(148,163,184,0.12);
+      background: linear-gradient(180deg, rgba(248,250,252,0.95), rgba(255,255,255,0.96));
+    }
+    .account-history-kicker {
+      color: #98a2b3;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      font-weight: 800;
+    }
+    .account-history-title { margin-top: 4px; font-size: 16px; font-weight: 800; color: #101828; letter-spacing: -0.03em; }
+    .account-history-note { margin-top: 4px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .account-history-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .history-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      border: 1px solid rgba(148,163,184,0.16);
+      background: #f8fafc;
+      color: #344054;
+    }
+    .history-pill.good { background: rgba(34, 197, 94, 0.12); border-color: rgba(34, 197, 94, 0.20); color: #166534; }
+    .history-pill.bad { background: rgba(251, 113, 133, 0.12); border-color: rgba(251, 113, 133, 0.20); color: #9f1239; }
+    .history-pill.cyan { background: rgba(56, 189, 248, 0.12); border-color: rgba(56, 189, 248, 0.20); color: #075985; }
+    .history-pill.violet { background: rgba(139, 92, 246, 0.12); border-color: rgba(139, 92, 246, 0.20); color: #6d28d9; }
+    .history-table-wrap { overflow-x: auto; }
+    .history-time { display: grid; gap: 2px; }
+    .history-time-sub { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+    .history-value { display: grid; gap: 2px; }
+    .history-value-sub { color: var(--muted); font-size: 11px; }
+    .history-activity { display: grid; gap: 6px; }
+    .history-activity-sub { color: var(--muted); font-size: 12px; line-height: 1.4; }
+    .history-status { display: inline-flex; justify-content: flex-start; }
+    .history-empty {
+      padding: 26px 20px;
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      background: linear-gradient(180deg, rgba(248,250,252,0.92), rgba(255,255,255,0.98));
+      color: var(--muted);
+    }
+    .history-empty-ico {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      color: #4f46e5;
+      background: #eef2ff;
+      border: 1px solid rgba(99,102,241,0.14);
+      flex: 0 0 auto;
+    }
+    .history-empty-title { font-weight: 800; color: #101828; margin-bottom: 4px; }
+    .history-empty-copy { font-size: 13px; line-height: 1.55; }
     @media (max-width: 1200px) { .hero { grid-template-columns: 1fr; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .metric:first-child { grid-column: span 2; } .panel-grid { grid-template-columns: 1fr; } .account-grid { grid-template-columns: 1fr; } .account-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     @media (max-width: 720px) { .shell { padding: 16px 12px 24px; } .hero-main { padding: 18px; } .grid { grid-template-columns: 1fr; } .metric:first-child { grid-column: span 1; } .hero-side { padding: 12px; } .stat-value { font-size: 26px; } .section-title h2 { font-size: 18px; } .mini-kpis, .status-grid { grid-template-columns: 1fr; } .account-grid, .account-summary { grid-template-columns: 1fr; } table { min-width: 760px; } }
   </style>
@@ -543,9 +630,7 @@
         <div class="account-table-wrap">
           <table class="account-table" id="account-positions"></table>
         </div>
-        <div class="account-table-wrap" style="margin-top:14px;">
-          <table class="account-table" id="order-history-table"></table>
-        </div>
+        <div id="order-history-table"></div>
       </div>
 
       <div class="panel-grid">
@@ -816,9 +901,16 @@
         .replaceAll("'", '&#39;');
     }
 
+    const moneyFormatter = new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
     function money(v) {
       const n = Number(v || 0);
-      return `$${n.toFixed(2)}`;
+      return moneyFormatter.format(Number.isFinite(n) ? n : 0);
     }
 
     function pct(v, digits = 1) {
@@ -831,6 +923,59 @@
       return `${n >= 0 ? '+' : ''}${n.toFixed(3)}`;
     }
 
+    function formatPrice(v) {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return '—';
+      return `${(n * 100).toFixed(1)}¢`;
+    }
+
+    function formatSize(v) {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return '—';
+      return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    }
+
+    function formatHistoryTime(value) {
+      if (!value) return { absolute: '—', relative: '—' };
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return { absolute: String(value), relative: '—' };
+      const absolute = date.toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      const deltaSeconds = Math.round((date.getTime() - Date.now()) / 1000);
+      const absSeconds = Math.abs(deltaSeconds);
+      const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+      let relative;
+      if (absSeconds < 60) {
+        relative = rtf.format(deltaSeconds, 'second');
+      } else if (absSeconds < 3600) {
+        relative = rtf.format(Math.round(deltaSeconds / 60), 'minute');
+      } else if (absSeconds < 86400) {
+        relative = rtf.format(Math.round(deltaSeconds / 3600), 'hour');
+      } else {
+        relative = rtf.format(Math.round(deltaSeconds / 86400), 'day');
+      }
+      return { absolute, relative };
+    }
+
+    function historyTone(value) {
+      const text = String(value || '').toLowerCase();
+      if (!text) return 'cyan';
+      if (['filled', 'executed', 'completed', 'success', 'match', 'matched', 'trade', 'open'].includes(text)) return 'good';
+      if (['cancelled', 'canceled', 'rejected', 'failed', 'expired', 'error', 'closed'].includes(text)) return 'bad';
+      if (['created', 'placed', 'submitted', 'updated', 'amended', 'pending', 'queued'].includes(text)) return 'cyan';
+      return 'violet';
+    }
+
+    function humanizeHistoryLabel(value) {
+      const text = String(value || '').replaceAll('_', ' ').replaceAll('-', ' ').trim();
+      if (!text) return 'UNKNOWN';
+      return text.toUpperCase();
+    }
     function shortId(value, head = 6, tail = 4) {
       const s = String(value ?? '').trim();
       if (!s || s === '—') return '—';
@@ -1298,7 +1443,7 @@
       const portfolioValue = Number(account.portfolio_value ?? 0) || 0;
       const equity = Number(account.equity ?? portfolioValue + cashBalance) || 0;
       const positionsCount = account.positions_count ?? positions.length;
-      const openOrders = account.open_orders_count ?? 0;
+      const openOrders = account.open_orders_count ?? account.order_history_count ?? (account.open_orders || account.order_history || []).length ?? 0;
       const shortWallet = shortId(wallet);
       const shortProxy = shortId(proxy);
       const shortDeposit = shortId(deposit);
@@ -1366,8 +1511,9 @@
         <div class="account-note">${warnings.length ? `Warnings: ${warnings.map(esc).join(' • ')}` : 'Live account sync aktif dan siap dipantau.'}${errors.length ? `<br/>Errors: ${errors.map(esc).join(' • ')}` : ''}</div>
       `;
 
+      const activitySummary = data.order_activity_summary || {};
       document.getElementById('account-note').textContent = account.enabled
-        ? `Sync status: ${status} • ${positionsCount} position(s) • ${openOrders} open order(s) • ${orderEvents.length} update(s) • equity ${money(equity)} • auth ${authType}`
+        ? `Sync status: ${status} • ${positionsCount} position(s) • ${openOrders} open order(s) • ${orderEvents.length} event(s) • ${Number(activitySummary.live_trades_count ?? (data.live_trades || []).length)} live trade(s) • equity ${money(equity)} • auth ${authType}`
         : 'No live account config yet. Set wallet/proxy/session + credentials to enable sync.';
 
       document.getElementById('account-positions').innerHTML = positions.length ? `
@@ -1411,8 +1557,8 @@
         </tbody>
       `;
 
-      const orderHistory = [
-        ...orderEvents.map(event => ({
+      const orderGroups = {
+        order_events: (data.latest_account_order_events || []).slice(0, 8).map(event => ({
           id: event.order_id || `${event.event_type}-${event.created_at}`,
           market_id: event.payload?.after?.market_id || event.payload?.before?.market_id || event.payload?.market_id || event.order_id,
           title: event.payload?.after?.question || event.payload?.before?.question || event.payload?.question || event.payload?.after?.title || event.payload?.before?.title || event.payload?.title || 'Order event',
@@ -1420,72 +1566,146 @@
           side: event.event_type,
           price: event.payload?.after?.price ?? event.payload?.price ?? event.payload?.before?.price ?? 0,
           size: event.payload?.after?.size ?? event.payload?.size ?? event.payload?.before?.size ?? 0,
+          filled_size: event.payload?.after?.filled_size ?? event.payload?.filled_size ?? event.payload?.before?.filled_size ?? 0,
           status: event.event_type,
           created_at: event.created_at,
           updated_at: event.created_at,
           raw: event,
           __source: 'order_event',
         })),
-        ...(account.order_history || []).map(order => ({ ...order, __source: 'open_order' })),
-        ...(data.live_trades || []).map(trade => ({
+        open_orders: ((account.open_orders || account.order_history || []).slice(0, 8)).map(order => ({ ...order, __source: 'open_order' })),
+        live_trades: (data.live_trades || []).slice(0, 8).map(trade => ({
           id: trade.order_id || `${trade.market_id}-${trade.created_at}`,
           market_id: trade.market_id,
           title: trade.question || trade.market_id || 'Live trade',
           side: trade.side,
           price: trade.price,
           size: trade.quantity,
+          filled_size: trade.quantity,
           status: trade.status || trade.mode || 'filled',
           created_at: trade.created_at,
           updated_at: trade.created_at,
           raw: trade,
           __source: 'live_trade',
         })),
-      ];
-      const orderRows = orderHistory.slice(0, 8);
-      document.getElementById('order-history-table').innerHTML = orderRows.length ? `
-        <thead>
-          <tr>
-            <th>Activity</th>
-            <th>Market</th>
-            <th>Value</th>
-            <th>Time</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${orderRows.map(order => {
-            const raw = order.raw || {};
-            const marketTitle = order.title || raw.question || raw.title || raw.slug || raw.market_id || order.market_id || 'Order';
-            const marketMeta = order.slug || raw.slug || raw.condition_id || order.token_id || order.id || '';
-            const activity = String(order.side || order.status || order.__source || 'order').toUpperCase();
-            const time = order.updated_at || order.created_at || raw.updated_at || raw.created_at || synced;
-            const value = Number(order.current_value ?? (Number(order.price || 0) * Number(order.size || 0)) ?? 0) || 0;
-            return `
-              <tr>
-                <td><span class="pill ${activity === 'BUY' || activity === 'YES' || activity === 'OPEN_ORDER' ? 'good' : activity === 'SELL' || activity === 'CANCELLED' || activity === 'REJECTED' ? 'bad' : 'cyan'}">${esc(activity)}</span></td>
-                <td>
-                  <div class="account-market">${esc(marketTitle)}</div>
-                  <div class="account-subtle mono">${esc(marketMeta)}</div>
-                </td>
-                <td class="mono">${money(value)}</td>
-                <td class="mono">${esc(time ? t(time) : '—')}</td>
-              </tr>
-            `;
-          }).join('')}
-        </tbody>
-      ` : `
-        <thead>
-          <tr>
-            <th>Activity</th>
-            <th>Market</th>
-            <th>Value</th>
-            <th>Time</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td colspan="4"><div class="account-positions-empty">Belum ada riwayat order live yang tersinkron.</div></td>
-          </tr>
-        </tbody>
+      };
+      const orderSections = (data.latest_account_order_sections || [
+        { key: 'order_events', title: 'Order events', note: 'Lifecycle updates from live account sync and fills.' },
+        { key: 'open_orders', title: 'Open orders', note: 'Resting orders currently visible in the live account.' },
+        { key: 'live_trades', title: 'Live trades', note: 'Executed trades and fills streamed from the live executor.' },
+      ]).map(section => ({
+        ...section,
+        rows: orderGroups[section.key] || [],
+      }));
+      const historySectionsHtml = orderSections
+        .filter(section => section.rows.length)
+        .map(section => {
+          const tone = section.key === 'live_trades' ? 'good' : section.key === 'open_orders' ? 'cyan' : 'violet';
+          const label = section.key === 'order_events' ? 'Event log' : section.key === 'open_orders' ? 'Open orders' : 'Live fills';
+          return `
+            <section class="account-history-section">
+              <div class="account-history-head">
+                <div>
+                  <div class="account-history-kicker">${esc(label)}</div>
+                  <div class="account-history-title">${esc(section.title)}</div>
+                  <div class="account-history-note">${esc(section.note)}</div>
+                </div>
+                <div class="account-history-chips">
+                  <span class="history-pill ${tone}">${esc(section.rows.length)} item(s)</span>
+                  <span class="history-pill">${esc(section.key.replaceAll('_', ' '))}</span>
+                </div>
+              </div>
+              <div class="history-table-wrap">
+                <table class="account-table">
+                  <thead>
+                    <tr>
+                      <th>Activity</th>
+                      <th>Market</th>
+                      <th>Price / Size</th>
+                      <th>Value</th>
+                      <th>Time</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${section.rows.map(order => {
+                      const raw = order.raw || {};
+                      const marketTitle = order.title || raw.question || raw.title || raw.slug || raw.market_id || order.market_id || 'Order';
+                      const marketMeta = order.slug || raw.slug || raw.condition_id || order.token_id || order.id || '';
+                      const sourceTone = order.__source === 'live_trade' ? 'good' : order.__source === 'open_order' ? 'cyan' : 'violet';
+                      const activityLabel = order.__source === 'order_event'
+                        ? humanizeHistoryLabel(order.side || raw.event_type || order.status || 'event')
+                        : order.__source === 'open_order'
+                          ? humanizeHistoryLabel(order.side || order.status || 'open')
+                          : humanizeHistoryLabel(order.side || order.status || 'filled');
+                      const activitySub = order.__source === 'order_event'
+                        ? 'lifecycle event'
+                        : order.__source === 'open_order'
+                          ? 'resting order'
+                          : 'executed trade';
+                      const statusValue = order.status || raw.status || raw.event_type || order.side || 'unknown';
+                      const statusText = humanizeHistoryLabel(statusValue);
+                      const statusClass = historyTone(statusValue);
+                      const price = Number(order.price ?? raw.price ?? raw.limitPrice ?? raw.avgPrice ?? 0) || 0;
+                      const size = Number(order.size ?? raw.size ?? raw.quantity ?? raw.originalSize ?? raw.filledSize ?? 0) || 0;
+                      const filled = Number(order.filled_size ?? raw.filled_size ?? raw.filledSize ?? 0) || 0;
+                      const value = Number(order.current_value ?? raw.current_value ?? ((price && size) ? price * size : (filled && price ? filled * price : 0)) ?? 0) || 0;
+                      const time = formatHistoryTime(order.updated_at || order.created_at || raw.updated_at || raw.created_at || synced);
+                      return `
+                        <tr>
+                          <td>
+                            <div class="history-activity">
+                              <span class="history-pill ${sourceTone}">${esc(section.key === 'order_events' ? 'event' : section.key === 'open_orders' ? 'open' : 'trade')}</span>
+                              <div>
+                                <div class="account-market">${esc(activityLabel)}</div>
+                                <div class="history-activity-sub">${esc(activitySub)}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            <div class="account-market">${esc(marketTitle)}</div>
+                            <div class="account-subtle mono">${esc(marketMeta)}</div>
+                          </td>
+                          <td>
+                            <div class="history-value mono">
+                              <div>${esc(formatPrice(price))}</div>
+                              <div class="history-value-sub">${esc(formatSize(size))}${filled ? ` • ${esc(formatSize(filled))} filled` : ''}</div>
+                            </div>
+                          </td>
+                          <td>
+                            <div class="history-value mono">
+                              <div>${money(value)}</div>
+                              <div class="history-value-sub">${section.key === 'order_events' ? 'event snapshot' : section.key === 'open_orders' ? 'estimated order value' : 'filled trade value'}</div>
+                            </div>
+                          </td>
+                          <td>
+                            <div class="history-time mono">
+                              <div>${esc(time.absolute)}</div>
+                              <div class="history-time-sub">${esc(time.relative)}</div>
+                            </div>
+                          </td>
+                          <td>
+                            <div class="history-status">
+                              <span class="pill ${statusClass}">${esc(statusText)}</span>
+                            </div>
+                          </td>
+                        </tr>
+                      `;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          `;
+        }).join('');
+      document.getElementById('order-history-table').innerHTML = historySectionsHtml || `
+        <div class="history-empty">
+          <div class="history-empty-ico">⌁</div>
+          <div>
+            <div class="history-empty-title">No live order activity yet</div>
+            <div class="history-empty-copy">Open orders, lifecycle events, and live trades will appear here as soon as the account sync produces them. No placeholder rows are shown.</div>
+          </div>
+        </div>
       `;
     }
 
@@ -1513,6 +1733,7 @@
 
       const wrap = document.getElementById('chart-wrap');
       const forecastSummary = stateData.forecast_sources_summary || { blend_count: 0, avg_blend_confidence: 0, avg_blend_disagreement_c: 0, top_sources: [] };
+      const calibrationSummary = stateData.calibration_summary || { records_count: 0, mae: 0, rmse: 0, accuracy: 0, brier_score: 0 };
       const sourceChips = (forecastSummary.top_sources || []).map(src => `<span class="analytics-chip cyan">${esc(src.source)} • ${src.count}x • ${((src.avg_confidence || 0) * 100).toFixed(1)}%</span>`).join('');
       if (!points.length) {
         wrap.innerHTML = '<div class="empty-chart">Belum ada snapshot historis. Chart akan muncul setelah bot beberapa kali scan.</div>';
@@ -1647,6 +1868,11 @@
                 <div class="analytics-card-k">Weather blend</div>
                 <div class="analytics-card-v">${forecastSummary.blend_count ? `${forecastSummary.blend_count} blended` : 'Single source'}</div>
                 <div class="analytics-card-sub">${forecastSummary.blend_count ? `Avg confidence ${((forecastSummary.avg_blend_confidence || 0) * 100).toFixed(1)}% • disagreement ${forecastSummary.avg_blend_disagreement_c.toFixed(2)}°C` : 'Live forecasts are still building source diversity.'}</div>
+              </div>
+              <div class="analytics-card">
+                <div class="analytics-card-k">Calibration</div>
+                <div class="analytics-card-v">${calibrationSummary.records_count || 0} records</div>
+                <div class="analytics-card-sub">MAE ${Number(calibrationSummary.mae || 0).toFixed(3)} • RMSE ${Number(calibrationSummary.rmse || 0).toFixed(3)} • Brier ${Number(calibrationSummary.brier_score || 0).toFixed(3)} • Acc ${(Number(calibrationSummary.accuracy || 0) * 100).toFixed(1)}%</div>
               </div>
               <div class="analytics-card">
                 <div class="analytics-card-k">Activity</div>
