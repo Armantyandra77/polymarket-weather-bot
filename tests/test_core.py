@@ -5,6 +5,7 @@ from polymarket_weather_bot.strategy import WeatherStrategy
 from polymarket_weather_bot.store import Store
 from polymarket_weather_bot.dashboard import DashboardState
 from polymarket_weather_bot.bot import BotEngine
+from polymarket_weather_bot.weather_sources import build_forecast_ensemble
 from polymarket_weather_bot.executor import PolymarketLiveExecutor
 
 
@@ -21,6 +22,40 @@ def test_probability_helpers():
     p = range_probability(17, 18, mean=17.4, sigma=1.0)
     assert 0.0 < p < 1.0
     assert one_tailed_probability('above', 18, mean=17, sigma=1.0) > 0.1
+
+
+def test_weather_ensemble_blends_open_meteo_and_nws(monkeypatch):
+    def fake_get_json(url, params=None, timeout=30):
+        if 'api.weather.gov/points' in url:
+            return {'properties': {'forecast': 'https://api.weather.gov/gridpoints/ABC/forecast'}}
+        if 'gridpoints/ABC/forecast' in url:
+            return {
+                'properties': {
+                    'periods': [
+                        {'startTime': '2030-04-17T06:00:00+00:00', 'temperature': 68, 'temperatureUnit': 'F', 'isDaytime': True},
+                        {'startTime': '2030-04-17T18:00:00+00:00', 'temperature': 61, 'temperatureUnit': 'F', 'isDaytime': False},
+                    ]
+                }
+            }
+        return {
+            'daily': {
+                'time': ['2030-04-17'],
+                'temperature_2m_mean': [18.0],
+                'temperature_2m_max': [21.0],
+                'temperature_2m_min': [15.0],
+            }
+        }
+
+    monkeypatch.setattr('polymarket_weather_bot.weather_sources._get_json', fake_get_json)
+    forecast = build_forecast_ensemble(41.0, -87.0, geocoded={'name': 'Chicago', 'country_code': 'US'})
+    assert forecast['source'] == 'blend'
+    assert len(forecast['sources']) == 2
+    stats = forecast['daily']
+    assert stats['time'] == ['2030-04-17']
+    assert 18.0 < stats['temperature_2m_mean'][0] < 20.5
+    assert stats['temperature_2m_max'][0] >= stats['temperature_2m_mean'][0]
+    assert stats['temperature_2m_min'][0] <= stats['temperature_2m_mean'][0]
+    assert forecast['blend']['source_count'] == 2
 
 
 def test_strategy_builds_signal_for_weather_market(monkeypatch):
@@ -40,7 +75,7 @@ def test_strategy_builds_signal_for_weather_market(monkeypatch):
     )
 
     monkeypatch.setattr('polymarket_weather_bot.strategy.geocode_city', lambda city: {'latitude': 1.0, 'longitude': 2.0})
-    monkeypatch.setattr('polymarket_weather_bot.strategy.forecast_city', lambda lat, lon: {
+    monkeypatch.setattr('polymarket_weather_bot.strategy.forecast_city', lambda lat, lon, **kwargs: {
         'daily': {
             'time': ['2030-04-17'],
             'temperature_2m_mean': [17.5],
@@ -88,7 +123,7 @@ def test_strategy_honors_city_and_term_filters(monkeypatch):
     )
 
     monkeypatch.setattr('polymarket_weather_bot.strategy.geocode_city', lambda city: {'latitude': 1.0, 'longitude': 2.0})
-    monkeypatch.setattr('polymarket_weather_bot.strategy.forecast_city', lambda lat, lon: {
+    monkeypatch.setattr('polymarket_weather_bot.strategy.forecast_city', lambda lat, lon, **kwargs: {
         'daily': {
             'time': ['2030-04-17'],
             'temperature_2m_mean': [17.5],

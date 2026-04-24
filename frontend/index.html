@@ -1512,6 +1512,8 @@
         .filter(Boolean);
 
       const wrap = document.getElementById('chart-wrap');
+      const forecastSummary = stateData.forecast_sources_summary || { blend_count: 0, avg_blend_confidence: 0, avg_blend_disagreement_c: 0, top_sources: [] };
+      const sourceChips = (forecastSummary.top_sources || []).map(src => `<span class="analytics-chip cyan">${esc(src.source)} • ${src.count}x • ${((src.avg_confidence || 0) * 100).toFixed(1)}%</span>`).join('');
       if (!points.length) {
         wrap.innerHTML = '<div class="empty-chart">Belum ada snapshot historis. Chart akan muncul setelah bot beberapa kali scan.</div>';
         return;
@@ -1624,6 +1626,7 @@
                 <span class="analytics-chip ${latest.pnl >= 0 ? 'good' : 'bad'}">pnl ${fmtPnL(latest.pnl)}</span>
                 <span class="analytics-chip cyan">${latest.open} open</span>
               </div>
+              ${sourceChips ? `<div class="analytics-rail">${sourceChips}</div>` : ''}
             </div>
             ${equitySvg}
             <div class="analytics-rail">
@@ -1639,6 +1642,11 @@
                 <div class="analytics-card-k">Return pulse</div>
                 <div class="analytics-card-v ${latest.ret >= 0 ? 'good' : 'bad'}">${normalizePercent(latest.ret).toFixed(2)}%</div>
                 <div class="analytics-card-sub">Latest return, compared to the first snapshot. Change ${normalizePercent(deltaRet).toFixed(2)}%.</div>
+              </div>
+              <div class="analytics-card">
+                <div class="analytics-card-k">Weather blend</div>
+                <div class="analytics-card-v">${forecastSummary.blend_count ? `${forecastSummary.blend_count} blended` : 'Single source'}</div>
+                <div class="analytics-card-sub">${forecastSummary.blend_count ? `Avg confidence ${((forecastSummary.avg_blend_confidence || 0) * 100).toFixed(1)}% • disagreement ${forecastSummary.avg_blend_disagreement_c.toFixed(2)}°C` : 'Live forecasts are still building source diversity.'}</div>
               </div>
               <div class="analytics-card">
                 <div class="analytics-card-k">Activity</div>

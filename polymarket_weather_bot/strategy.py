@@ -77,7 +77,7 @@ class WeatherStrategy:
         if not geocoded:
             return {"skip": True, "reason": "geocode_failed", "meta": meta}
 
-        forecast = forecast_city(float(geocoded["latitude"]), float(geocoded["longitude"]))
+        forecast = forecast_city(float(geocoded["latitude"]), float(geocoded["longitude"]), geocoded=geocoded)
         stats = mean_and_sigma_for_date(forecast, end_date.isoformat())
         if not stats:
             return {"skip": True, "reason": "forecast_out_of_range", "meta": meta}
@@ -93,9 +93,11 @@ class WeatherStrategy:
         else:
             return {"skip": True, "reason": "unsupported_question_type", "meta": meta}
 
+        forecast_blend = forecast.get("blend") or {}
+        forecast_confidence = float(forecast_blend.get("confidence") or 0.0)
         market_prob = market.market_prob
         edge = model_prob - market_prob
-        confidence = min(0.99, max(0.0, meta.get("confidence", 0.3) * (1.0 - min(market.spread, 0.5)) + 0.1))
+        confidence = min(0.99, max(0.0, meta.get("confidence", 0.3) * (1.0 - min(market.spread, 0.5)) + 0.1 + forecast_confidence * 0.08))
         action = "HOLD"
         if edge >= self.edge_threshold:
             action = "BUY_YES"
@@ -126,7 +128,7 @@ class WeatherStrategy:
             "skip": False,
             "signal": signal,
             "meta": meta,
-            "forecast": {**stats, "city": city, "lat": geocoded["latitude"], "lon": geocoded["longitude"]},
+            "forecast": {**forecast, "stats": stats, "city": city, "lat": geocoded["latitude"], "lon": geocoded["longitude"], "date": end_date.isoformat()},
         }
 
     def should_enter(self, signal: Signal, open_positions: int) -> bool:

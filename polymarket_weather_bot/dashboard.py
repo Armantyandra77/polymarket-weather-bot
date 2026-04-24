@@ -59,6 +59,49 @@ class DashboardState:
             }
         return alerts
 
+    def _forecast_summary(self, forecasts: List[Dict[str, Any]]) -> Dict[str, Any]:
+        by_source: Dict[str, Dict[str, Any]] = {}
+        blend_count = 0
+        blend_conf_total = 0.0
+        blend_disagreement_total = 0.0
+        source_rows = 0
+        for snap in forecasts:
+            forecast = snap.get('forecast') or {}
+            sources = forecast.get('sources') or []
+            blend = forecast.get('blend') or {}
+            if sources:
+                source_rows += 1
+                blend_count += 1
+                blend_conf_total += float(blend.get('confidence', 0.0) or 0.0)
+                blend_disagreement_total += float(blend.get('disagreement_c', 0.0) or 0.0)
+            for source in sources:
+                name = str(source.get('source') or 'unknown')
+                bucket = by_source.setdefault(name, {'count': 0, 'confidence_total': 0.0, 'weight_total': 0.0, 'available_dates_total': 0})
+                bucket['count'] += 1
+                bucket['confidence_total'] += float(source.get('confidence', 0.0) or 0.0)
+                bucket['weight_total'] += float(source.get('weight', 0.0) or 0.0)
+                bucket['available_dates_total'] += int(source.get('available_dates', 0) or 0)
+        top_sources = []
+        for name, bucket in by_source.items():
+            count = max(1, bucket['count'])
+            top_sources.append({
+                'source': name,
+                'count': bucket['count'],
+                'avg_confidence': round(bucket['confidence_total'] / count, 3),
+                'avg_weight': round(bucket['weight_total'] / count, 3),
+                'avg_available_dates': round(bucket['available_dates_total'] / count, 1),
+            })
+        top_sources.sort(key=lambda item: (item['count'], item['avg_confidence'], item['avg_weight']), reverse=True)
+        return {
+            'forecast_rows': len(forecasts),
+            'forecast_rows_with_sources': source_rows,
+            'blend_count': blend_count,
+            'avg_blend_confidence': round(blend_conf_total / blend_count, 3) if blend_count else 0.0,
+            'avg_blend_disagreement_c': round(blend_disagreement_total / blend_count, 2) if blend_count else 0.0,
+            'by_source': by_source,
+            'top_sources': top_sources[:4],
+        }
+
     def current_state(self) -> Dict[str, Any]:
         snapshot = self.store.get_last_snapshot() or {}
         controls = self.store.get_controls()
@@ -126,6 +169,7 @@ class DashboardState:
         signal_outcomes = self.store.get_signal_outcomes(12)
         order_snapshots = self.store.get_account_order_snapshots(12)
         order_events = self.store.get_account_order_events(12)
+        forecast_summary = self._forecast_summary(forecasts)
 
         return {
             'mode': snapshot.get('mode', os.getenv('BOT_MODE', 'paper')),
@@ -157,6 +201,8 @@ class DashboardState:
             'latest_signal_outcomes': signal_outcomes,
             'latest_account_order_snapshots': order_snapshots,
             'latest_account_order_events': order_events,
+            'forecast_summary': forecast_summary,
+            'forecast_sources_summary': forecast_summary,
             'health': {
                 'paused': _truthy(controls.get('paused', False)),
                 'force_scan': _truthy(controls.get('force_scan', False)),

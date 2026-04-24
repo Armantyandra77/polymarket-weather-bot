@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from .models import Market
 from .parser import parse_end_date
+from .weather_sources import build_forecast_ensemble, mean_and_sigma_for_date as ensemble_mean_and_sigma_for_date
 
 GAMMA_BASE = 'https://gamma-api.polymarket.com'
 OPEN_METEO_GEOCODE = 'https://geocoding-api.open-meteo.com/v1/search'
@@ -163,19 +164,8 @@ def geocode_city(city: str) -> Optional[Dict[str, Any]]:
     return results[0]
 
 
-def forecast_city(lat: float, lon: float, days: int = 14) -> Dict[str, Any]:
-    return _get_json(
-        OPEN_METEO_FORECAST,
-        {
-            "latitude": lat,
-            "longitude": lon,
-            "hourly": ["temperature_2m"],
-            "daily": ["temperature_2m_max", "temperature_2m_min", "temperature_2m_mean"],
-            "forecast_days": days,
-            "timezone": "auto",
-        },
-        timeout=30,
-    )
+def forecast_city(lat: float, lon: float, days: int = 14, geocoded: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    return build_forecast_ensemble(lat, lon, days=days, geocoded=geocoded)
 
 
 def mean_and_sigma_for_date(forecast: Dict[str, Any], target_date: str) -> Optional[Dict[str, float]]:
