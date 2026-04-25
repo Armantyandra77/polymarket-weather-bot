@@ -36,6 +36,8 @@ class PaperExecutor:
             opened_at=now,
             updated_at=now,
             source="paper",
+            budget=quantity,
+            meta={"city": signal.city, "date": signal.date, "signal_confidence": signal.confidence, "signal_edge": signal.edge},
         )
         self.store.save_position(pos)
         self.store.save_trade(
@@ -107,8 +109,10 @@ class BotEngine:
         positions_snapshot = self.store.get_positions()
         if self.mode == 'live':
             open_positions = len([p for p in positions_snapshot if str(p.get('source', 'paper')).lower() == 'live' and str(p.get('status', 'open')).lower() == 'open'])
+            open_positions_list = [p for p in positions_snapshot if str(p.get('source', 'paper')).lower() == 'live' and str(p.get('status', 'open')).lower() == 'open']
         else:
             open_positions = len([p for p in positions_snapshot if str(p.get('status', 'open')).lower() == 'open'])
+            open_positions_list = [p for p in positions_snapshot if str(p.get('status', 'open')).lower() == 'open']
         for market in markets:
             try:
                 res = self.strategy.analyze_market(market)
@@ -149,12 +153,15 @@ class BotEngine:
                 except Exception:
                     pass
                 if self.strategy.should_enter(signal, open_positions):
-                    qty = self.strategy.recommended_size(signal, bankroll=self.bankroll)
+                    if not self.strategy.passes_risk_limits(signal, open_positions_list, bankroll=self.bankroll):
+                        continue
+                    qty = self.strategy.recommended_size(signal, bankroll=self.bankroll, positions=open_positions_list)
                     if qty > 0:
                         pos = self.executor.open_position(signal, qty, market=market)
                         if pos is None:
                             continue
                         open_positions += 1
+                        open_positions_list.append(asdict(pos))
                         self.store.save_snapshot({"event": "opened_position", "position": asdict(pos)})
                         try:
                             self.notifier.notify_position(pos)

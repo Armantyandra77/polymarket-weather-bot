@@ -324,7 +324,7 @@ class PolymarketLiveExecutor:
             order_id=order_id,
             source="live",
             budget=round(amount_usd, 4),
-            meta={"response": response, "token_id": token_id, "order_style": self.order_style},
+            meta={"response": response, "token_id": token_id, "order_style": self.order_style, "city": signal.city, "date": signal.date, "signal_confidence": signal.confidence, "signal_edge": signal.edge},
         )
         self.store.save_position(position)
         self.store.save_trade(

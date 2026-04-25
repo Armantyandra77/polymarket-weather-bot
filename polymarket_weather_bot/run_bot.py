@@ -36,7 +36,7 @@ def run_forever():
     poll_seconds = int(os.getenv('BOT_POLL_SECONDS', '300'))
     control_poll_seconds = int(os.getenv('BOT_CONTROL_POLL_SECONDS', '20'))
     account_sync_seconds = int(os.getenv('BOT_ACCOUNT_SYNC_SECONDS', '15'))
-    min_volume = float(os.getenv('BOT_MIN_VOLUME', '5000'))
+    min_volume = float(os.getenv('BOT_MIN_VOLUME', '8000'))
     max_spread = float(os.getenv('BOT_MAX_SPREAD', '0.08'))
     edge_threshold = float(os.getenv('BOT_EDGE_THRESHOLD', '0.10'))
     max_positions = int(os.getenv('BOT_MAX_POSITIONS', '3'))

@@ -983,6 +983,25 @@
       return `${s.slice(0, head)}…${s.slice(-tail)}`;
     }
 
+    function shortSource(value) {
+      const s = String(value ?? '').trim();
+      if (!s || s === '—') return '—';
+      return s
+        .replace(/^https?:\/\/[^/]+/i, '')
+        .replace(/^data-api:/i, 'data-api:')
+        .replace(/^positions\./i, 'positions.')
+        .replace(/^clob-/i, 'clob-');
+    }
+
+    function summarizeBalanceSources(rows = []) {
+      const items = Array.isArray(rows) ? rows.filter(Boolean) : [];
+      if (!items.length) return '—';
+      const kinds = [...new Set(items.map(item => item.kind || 'unknown'))];
+      const total = items.reduce((sum, item) => sum + (Number(item.balance) || 0), 0);
+      const kindLabel = kinds.length === 1 ? kinds[0].toUpperCase() : kinds.map(k => k.toUpperCase()).join(' + ');
+      return `${kindLabel} • ${money(total)}`;
+    }
+
     function normalizePercent(value) {
       const n = Number(value);
       if (!Number.isFinite(n)) return 0;
@@ -1441,12 +1460,15 @@
       const buyingPower = Number(balance.allowance ?? 0) || 0;
       const cashBalance = Number(balance.balance ?? 0) || 0;
       const portfolioValue = Number(account.portfolio_value ?? 0) || 0;
+      const portfolioSource = account.portfolio_value_source || 'unknown';
+      const portfolioTrace = account.portfolio_value_trace || {};
       const equity = Number(account.equity ?? portfolioValue + cashBalance) || 0;
       const positionsCount = account.positions_count ?? positions.length;
       const openOrders = account.open_orders_count ?? account.order_history_count ?? (account.open_orders || account.order_history || []).length ?? 0;
       const shortWallet = shortId(wallet);
       const shortProxy = shortId(proxy);
       const shortDeposit = shortId(deposit);
+      const balanceSourceSummary = summarizeBalanceSources(account.balance_sources || []);
 
       const summary = [
         ['Status', status, statusTone],
@@ -1507,13 +1529,15 @@
           <div class="account-chip"><div class="account-chip-k">Wallet</div><div class="account-chip-v mono" title="${esc(wallet)}">${esc(shortWallet)}</div></div>
           <div class="account-chip"><div class="account-chip-k">Proxy</div><div class="account-chip-v mono" title="${esc(proxy)}">${esc(shortProxy)}</div></div>
           <div class="account-chip"><div class="account-chip-k">Deposit</div><div class="account-chip-v mono" title="${esc(deposit)}">${esc(shortDeposit)}</div></div>
+          <div class="account-chip"><div class="account-chip-k">Portfolio src</div><div class="account-chip-v mono" title="${esc(JSON.stringify(portfolioTrace))}">${esc(shortSource(portfolioSource))}</div></div>
+          <div class="account-chip"><div class="account-chip-k">Balance src</div><div class="account-chip-v mono" title="${esc(JSON.stringify(account.balance_sources || []))}">${esc(balanceSourceSummary)}</div></div>
         </div>
         <div class="account-note">${warnings.length ? `Warnings: ${warnings.map(esc).join(' • ')}` : 'Live account sync aktif dan siap dipantau.'}${errors.length ? `<br/>Errors: ${errors.map(esc).join(' • ')}` : ''}</div>
       `;
 
       const activitySummary = data.order_activity_summary || {};
       document.getElementById('account-note').textContent = account.enabled
-        ? `Sync status: ${status} • ${positionsCount} position(s) • ${openOrders} open order(s) • ${orderEvents.length} event(s) • ${Number(activitySummary.live_trades_count ?? (data.live_trades || []).length)} live trade(s) • equity ${money(equity)} • auth ${authType}`
+        ? `Sync status: ${status} • ${positionsCount} position(s) • ${openOrders} open order(s) • ${orderEvents.length} event(s) • ${Number(activitySummary.live_trades_count ?? (data.live_trades || []).length)} live trade(s) • equity ${money(equity)} • portfolio source ${shortSource(portfolioSource)} • auth ${authType}`
         : 'No live account config yet. Set wallet/proxy/session + credentials to enable sync.';
 
       document.getElementById('account-positions').innerHTML = positions.length ? `

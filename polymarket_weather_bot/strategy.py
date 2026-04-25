@@ -29,6 +29,15 @@ class WeatherStrategy:
         self.blocked_cities = self._parse_csv_env('BOT_BLOCKED_CITIES')
         self.allowed_terms = self._parse_csv_env('BOT_ALLOWED_TERMS')
         self.blocked_terms = self._parse_csv_env('BOT_BLOCKED_TERMS')
+        # Risk management defaults are intentionally conservative for weather markets,
+        # where many questions are correlated by city/date and forecast error can spike.
+        self.min_confidence = float(os.getenv('BOT_RISK_MIN_CONFIDENCE', '0.92'))
+        self.max_position_fraction = float(os.getenv('BOT_RISK_MAX_POSITION_FRACTION', '0.03'))
+        self.max_total_exposure_fraction = float(os.getenv('BOT_RISK_MAX_TOTAL_EXPOSURE_FRACTION', '0.10'))
+        self.max_city_exposure_fraction = float(os.getenv('BOT_RISK_MAX_CITY_EXPOSURE_FRACTION', '0.04'))
+        self.min_trade_usd = float(os.getenv('BOT_RISK_MIN_TRADE_USD', '1'))
+        self.kelly_fraction = float(os.getenv('BOT_RISK_KELLY_FRACTION', '0.15'))
+        self.max_city_positions = int(os.getenv('BOT_RISK_MAX_CITY_POSITIONS', '1'))
 
     @staticmethod
     def _parse_csv_env(name: str) -> List[str]:
@@ -131,12 +140,98 @@ class WeatherStrategy:
             "forecast": {**forecast, "stats": stats, "city": city, "lat": geocoded["latitude"], "lon": geocoded["longitude"], "date": end_date.isoformat()},
         }
 
-    def should_enter(self, signal: Signal, open_positions: int) -> bool:
-        return signal.action in ("BUY_YES", "BUY_NO") and signal.edge >= self.edge_threshold and open_positions < self.max_positions
+    @staticmethod
+    def _position_city(position: Dict[str, Any]) -> str:
+        meta = position.get('meta') or {}
+        if isinstance(meta, dict):
+            city = meta.get('city')
+            if city:
+                return str(city)
+        question = str(position.get('question') or '')
+        parsed = parse_market_question(question)
+        return str(parsed.get('city') or '')
 
-    def recommended_size(self, signal: Signal, bankroll: float = 100.0) -> float:
-        if signal.edge <= 0:
+    @staticmethod
+    def _position_value(position: Dict[str, Any]) -> float:
+        budget = position.get('budget')
+        if budget is not None:
+            try:
+                return max(0.0, float(budget))
+            except Exception:
+                pass
+        quantity = float(position.get('quantity') or 0.0)
+        avg_entry_price = float(position.get('avg_entry_price') or 0.0)
+        return max(0.0, quantity * avg_entry_price)
+
+    def _active_positions(self, positions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        return [
+            p for p in positions
+            if str(p.get('status', 'open')).lower() == 'open'
+        ]
+
+    def _total_exposure(self, positions: List[Dict[str, Any]]) -> float:
+        return sum(self._position_value(p) for p in self._active_positions(positions))
+
+    def _city_exposure(self, city: str, positions: List[Dict[str, Any]]) -> float:
+        city = str(city or '').strip().lower()
+        if not city:
             return 0.0
-        # Conservative Kelly-like fraction with cap.
-        fraction = min(0.05, max(0.01, signal.edge / 4.0))
-        return round(bankroll * fraction, 2)
+        return sum(
+            self._position_value(p)
+            for p in self._active_positions(positions)
+            if self._position_city(p).strip().lower() == city
+        )
+
+    def _city_position_count(self, city: str, positions: List[Dict[str, Any]]) -> int:
+        city = str(city or '').strip().lower()
+        if not city:
+            return 0
+        return sum(1 for p in self._active_positions(positions) if self._position_city(p).strip().lower() == city)
+
+    def should_enter(self, signal: Signal, open_positions: int) -> bool:
+        if signal.action not in ("BUY_YES", "BUY_NO"):
+            return False
+        if abs(signal.edge) < self.edge_threshold:
+            return False
+        if signal.confidence < self.min_confidence:
+            return False
+        return open_positions < self.max_positions
+
+    def passes_risk_limits(self, signal: Signal, positions: List[Dict[str, Any]], bankroll: float = 100.0) -> bool:
+        active_positions = self._active_positions(positions)
+        if not active_positions:
+            return True
+        total_limit = bankroll * self.max_total_exposure_fraction
+        city_limit = bankroll * self.max_city_exposure_fraction
+        total_exposure = self._total_exposure(active_positions)
+        city_exposure = self._city_exposure(signal.city, active_positions)
+        if total_exposure >= total_limit:
+            return False
+        if city_exposure >= city_limit:
+            return False
+        if self._city_position_count(signal.city, active_positions) >= self.max_city_positions:
+            return False
+        return True
+
+    def recommended_size(self, signal: Signal, bankroll: float = 100.0, positions: Optional[List[Dict[str, Any]]] = None) -> float:
+        if signal.action not in ("BUY_YES", "BUY_NO"):
+            return 0.0
+        edge = abs(float(signal.edge))
+        if edge < self.edge_threshold:
+            return 0.0
+        confidence = max(0.0, min(1.0, float(signal.confidence)))
+        confidence_scale = 0.0
+        if confidence >= self.min_confidence:
+            denom = max(1e-9, 1.0 - self.min_confidence)
+            confidence_scale = min(1.0, (confidence - self.min_confidence) / denom)
+        raw_fraction = edge * self.kelly_fraction * max(0.35, confidence_scale)
+        fraction = max(0.01, min(self.max_position_fraction, raw_fraction))
+        amount = bankroll * fraction
+        if positions:
+            active_positions = self._active_positions(positions)
+            total_remaining = max(0.0, bankroll * self.max_total_exposure_fraction - self._total_exposure(active_positions))
+            city_remaining = max(0.0, bankroll * self.max_city_exposure_fraction - self._city_exposure(signal.city, active_positions))
+            amount = min(amount, total_remaining, city_remaining)
+        if amount < self.min_trade_usd:
+            return 0.0
+        return round(amount, 2)

@@ -138,6 +138,35 @@ def test_strategy_honors_city_and_term_filters(monkeypatch):
     assert s.analyze_market(blocked_market)['reason'] == 'blocked_term'
 
 
+def test_strategy_risk_management_prefers_yes_and_no_and_blocks_duplicate_city(monkeypatch):
+    monkeypatch.setenv('BOT_RISK_MIN_CONFIDENCE', '0.92')
+    monkeypatch.setenv('BOT_RISK_MAX_POSITION_FRACTION', '0.03')
+    monkeypatch.setenv('BOT_RISK_MAX_TOTAL_EXPOSURE_FRACTION', '0.10')
+    monkeypatch.setenv('BOT_RISK_MAX_CITY_EXPOSURE_FRACTION', '0.04')
+    monkeypatch.setenv('BOT_RISK_MAX_CITY_POSITIONS', '1')
+    s = WeatherStrategy(min_volume=1000, max_spread=0.5, edge_threshold=0.10, max_days_out=5000)
+    buy_no = Signal(
+        market_id='n1',
+        question='Will Seoul be below 14°C on 2030-04-17?',
+        city='Seoul',
+        date='2030-04-17',
+        market_prob=0.68,
+        model_prob=0.42,
+        edge=-0.26,
+        action='BUY_NO',
+        confidence=0.96,
+        rationale='edge=-26.00%',
+        generated_at='2030-04-17T00:00:00Z',
+    )
+    open_positions = [
+        {'status': 'open', 'budget': 2.5, 'meta': {'city': 'Seoul', 'date': '2030-04-17'}},
+    ]
+    assert s.should_enter(buy_no, open_positions=0) is True
+    assert s.passes_risk_limits(buy_no, open_positions, bankroll=100.0) is False
+    sized = s.recommended_size(buy_no, bankroll=100.0, positions=[])
+    assert 1.0 <= sized <= 3.0
+
+
 def test_live_account_config_reads_session_hint(monkeypatch):
     monkeypatch.delenv('BOT_POLYMARKET_WALLET_ADDRESS', raising=False)
     monkeypatch.delenv('BOT_POLYMARKET_PROXY_ADDRESS', raising=False)
@@ -196,6 +225,7 @@ def test_live_account_sync_uses_session_proxy_address(monkeypatch):
     assert result['profile']['name'] == 'King Proxy'
     assert result['positions_count'] == 1
     assert result['portfolio_value'] == 0.2
+    assert result['portfolio_value_source'] == 'data-api:/value'
     assert result['wallet_balance'] == 3.69
     assert result['equity'] == 3.89
     assert result['open_orders_count'] == 0
@@ -256,7 +286,7 @@ def test_live_account_sync_normalizes_profile_positions_and_balance():
 
 
 def test_live_account_sync_supports_solana_deposit_balance(monkeypatch):
-    monkeypatch.setattr('polymarket_weather_bot.account._get_onchain_usdc_balance', lambda addr: 3.69)
+    monkeypatch.setattr('polymarket_weather_bot.account._get_onchain_usdc_balance', lambda addr: 3.69 if addr.startswith('Anb') else 0.0)
 
     class FakeClient:
         def get_balance_allowance(self, params=None):
@@ -269,6 +299,7 @@ def test_live_account_sync_supports_solana_deposit_balance(monkeypatch):
         PolymarketAccountConfig(
             wallet_address='0x1234567890abcdef1234567890abcdef12345678',
             deposit_address='Anb1TGWNeu7Nb4LXoikpYGsouQkvzosqVxfAXwk1527',
+            solana_address='Anb1TGWNeu7Nb4LXoikpYGsouQkvzosqVxfAXwk1527',
             private_key='0xdeadbeef',
         ),
         http_get=lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError('should not call public profile endpoints for Solana deposit balance lookups')),
@@ -278,8 +309,10 @@ def test_live_account_sync_supports_solana_deposit_balance(monkeypatch):
     assert result['status'] == 'connected'
     assert result['wallet_balance'] == 3.69
     assert result['equity'] == 3.69
+    assert result['portfolio_value_source'] == 'unavailable'
     assert result['positions_count'] == 0
     assert result['open_orders_count'] == 0
+    assert result['balance_sources'][0]['kind'] == 'solana'
 
 
 def test_dashboard_state_and_controls(tmp_path):

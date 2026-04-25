@@ -11,8 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-DATA_API = "https://data-api.polymarket.com"
-GAMMA_API = "https://gamma-api.polymarket.com"
+DATA_API = os.getenv("BOT_POLYMARKET_DATA_API", "https://data-api.polymarket.com")
+GAMMA_API = os.getenv("BOT_POLYMARKET_GAMMA_API", "https://gamma-api.polymarket.com")
 CLOB_API = os.getenv("BOT_POLYMARKET_CLOB_HOST", "https://clob.polymarket.com")
 POLYGON_RPC_URL = os.getenv("BOT_POLYMARKET_RPC_URL", "https://polygon-bor.publicnode.com")
 SOLANA_RPC_URL = os.getenv("BOT_POLYMARKET_SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
@@ -162,7 +162,7 @@ def _get_onchain_usdc_balance(wallet_address: str) -> float:
                 continue
         return total
 
-    data = '0x70a08231000000000000000000000000' + _hex_address(wallet_address)
+    data = '0x70a08231' + _hex_address(wallet_address)
     result = _rpc_post(POLYGON_RPC_URL, 'eth_call', [{"to": USDC_POLYGON, "data": data}, 'latest'])
     value = result.get('result') if isinstance(result, dict) else None
     if not value:
@@ -175,12 +175,15 @@ class PolymarketAccountConfig:
     wallet_address: str | None = None
     proxy_address: str | None = None
     deposit_address: str | None = None
+    solana_address: str | None = None
     authentication_type: str | None = None
     private_key: str | None = None
     funder_address: str | None = None
     api_key: str | None = None
     api_secret: str | None = None
     api_passphrase: str | None = None
+    data_api: str = DATA_API
+    gamma_api: str = GAMMA_API
     chain_id: int = DEFAULT_CHAIN_ID
     signature_type: int = DEFAULT_SIGNATURE_TYPE
     clob_host: str = CLOB_API
@@ -189,24 +192,31 @@ class PolymarketAccountConfig:
     def from_env(cls) -> "PolymarketAccountConfig":
         wallet_address = os.getenv("BOT_POLYMARKET_WALLET_ADDRESS") or os.getenv("BOT_POLYMARKET_PUBLIC_ADDRESS")
         deposit_address = os.getenv("BOT_POLYMARKET_DEPOSIT_ADDRESS") or os.getenv("BOT_POLYMARKET_SOLANA_ADDRESS")
+        solana_address = os.getenv("BOT_POLYMARKET_SOLANA_ADDRESS") or os.getenv("BOT_POLYMARKET_SOLANA_DEPOSIT_ADDRESS")
         funder_address = os.getenv("BOT_POLYMARKET_FUNDER_ADDRESS") or None
         session_hint = _parse_session_hint(_read_text_env_or_file("BOT_POLYMARKET_SESSION_HINT", "BOT_POLYMARKET_SESSION_HINT_PATH"))
         proxy_address = os.getenv("BOT_POLYMARKET_PROXY_ADDRESS") or session_hint.get("proxy_address") or None
         authentication_type = os.getenv("BOT_POLYMARKET_AUTHENTICATION_TYPE") or session_hint.get("authentication_type") or None
+        if not solana_address and _is_solana_address(deposit_address):
+            solana_address = deposit_address
         return cls(
             wallet_address=wallet_address or proxy_address or funder_address,
             proxy_address=proxy_address or wallet_address or funder_address,
             deposit_address=deposit_address or proxy_address or wallet_address or funder_address,
+            solana_address=solana_address or None,
             authentication_type=authentication_type,
             private_key=os.getenv("BOT_POLYMARKET_PRIVATE_KEY") or None,
             funder_address=funder_address,
             api_key=os.getenv("BOT_POLYMARKET_API_KEY") or None,
             api_secret=os.getenv("BOT_POLYMARKET_API_SECRET") or None,
             api_passphrase=os.getenv("BOT_POLYMARKET_API_PASSPHRASE") or None,
+            data_api=os.getenv("BOT_POLYMARKET_DATA_API", DATA_API),
+            gamma_api=os.getenv("BOT_POLYMARKET_GAMMA_API", GAMMA_API),
             chain_id=int(os.getenv("BOT_POLYMARKET_CHAIN_ID", str(DEFAULT_CHAIN_ID))),
             signature_type=int(os.getenv("BOT_POLYMARKET_SIGNATURE_TYPE", str(DEFAULT_SIGNATURE_TYPE))),
             clob_host=os.getenv("BOT_POLYMARKET_CLOB_HOST", CLOB_API),
         )
+
 
 
 class PolymarketAccountSync:
@@ -323,7 +333,10 @@ class PolymarketAccountSync:
             "positions": [],
             "positions_count": 0,
             "portfolio_value": 0.0,
+            "portfolio_value_source": "unknown",
+            "portfolio_value_trace": {},
             "wallet_balance": 0.0,
+            "balance_sources": [],
             "equity": 0.0,
             "balance": {},
             "open_orders_count": 0,
@@ -331,6 +344,10 @@ class PolymarketAccountSync:
             "order_history_count": 0,
             "order_history": [],
             "order_source": "clob-open-orders",
+            "recent_activity": [],
+            "recent_trades": [],
+            "trades_count": 0,
+            "activity_count": 0,
             "trading_ready": False,
             "auth_layers": {
                 "l1_private_key": bool(self.config.private_key),
@@ -343,7 +360,16 @@ class PolymarketAccountSync:
 
         account_address = self.config.proxy_address or self.config.wallet_address
         wallet_address = self.config.wallet_address or self.config.proxy_address
-        balance_address = self.config.deposit_address or self.config.proxy_address or wallet_address
+        balance_sources: list[str] = []
+        for candidate in (
+            self.config.deposit_address,
+            self.config.solana_address,
+            self.config.wallet_address,
+            self.config.proxy_address,
+            self.config.funder_address,
+        ):
+            if candidate and candidate not in balance_sources:
+                balance_sources.append(candidate)
         if not result["enabled"]:
             result["warnings"].append("Set BOT_POLYMARKET_PROXY_ADDRESS, BOT_POLYMARKET_WALLET_ADDRESS, or BOT_POLYMARKET_FUNDER_ADDRESS to enable live account sync.")
             return result
@@ -351,7 +377,7 @@ class PolymarketAccountSync:
         read_only_ok = False
         if account_address and _is_evm_address(account_address):
             try:
-                profile = self.http_get(f"{GAMMA_API}/public-profile", {"address": account_address})
+                profile = self.http_get(f"{self.config.gamma_api}/public-profile", {"address": account_address})
                 result["profile"] = {
                     "name": profile.get("name"),
                     "pseudonym": profile.get("pseudonym"),
@@ -366,7 +392,7 @@ class PolymarketAccountSync:
                 result["warnings"].append(f"profile lookup failed: {exc}")
 
             try:
-                positions_raw = self.http_get(f"{DATA_API}/positions", {"user": account_address, "limit": 100})
+                positions_raw = self.http_get(f"{self.config.data_api}/positions", {"user": account_address, "limit": 100})
                 if isinstance(positions_raw, list):
                     result["positions"] = [self._normalize_position(p) for p in positions_raw]
                     result["positions_count"] = len(result["positions"])
@@ -375,35 +401,84 @@ class PolymarketAccountSync:
                 result["warnings"].append(f"positions lookup failed: {exc}")
 
             try:
-                values_raw = self.http_get(f"{DATA_API}/value", {"user": account_address})
+                values_raw = self.http_get(f"{self.config.data_api}/value", {"user": account_address})
                 total_value = 0.0
+                portfolio_source = "unknown"
+                portfolio_trace: Dict[str, Any] = {"endpoint": f"{self.config.data_api}/value", "shape": type(values_raw).__name__}
                 if isinstance(values_raw, list):
+                    portfolio_source = "data-api:/value"
+                    portfolio_trace["items"] = len(values_raw)
                     for item in values_raw:
                         if isinstance(item, dict) and item.get("value") is not None:
                             total_value += float(item.get("value") or 0.0)
                 elif isinstance(values_raw, dict) and values_raw.get("value") is not None:
+                    portfolio_source = "data-api:/value"
+                    portfolio_trace["keys"] = sorted(values_raw.keys())[:12]
                     total_value = float(values_raw.get("value") or 0.0)
                 elif result["positions"]:
+                    portfolio_source = "positions.current_value_sum"
                     total_value = sum(float(p.get("current_value") or 0.0) for p in result["positions"])
                 result["portfolio_value"] = round(total_value, 4)
+                result["portfolio_value_source"] = portfolio_source
+                result["portfolio_value_trace"] = portfolio_trace
                 read_only_ok = True
             except Exception as exc:
                 result["warnings"].append(f"portfolio value lookup failed: {exc}")
                 if result["positions"]:
                     result["portfolio_value"] = round(sum(float(p.get("current_value") or 0.0) for p in result["positions"]), 4)
+                    result["portfolio_value_source"] = "positions.current_value_sum"
+                    result["portfolio_value_trace"] = {"fallback": True, "reason": str(exc)}
                     read_only_ok = True
 
-        try:
-            wallet_balance = _get_onchain_usdc_balance(balance_address)
-            result["wallet_balance"] = round(wallet_balance, 4)
-            result["equity"] = round(wallet_balance + result["portfolio_value"], 4)
-            read_only_ok = True
-        except Exception as exc:
-            result["warnings"].append(f"wallet balance lookup failed: {exc}")
-            result["equity"] = round(result["portfolio_value"], 4)
+            try:
+                trades_raw = self.http_get(f"{self.config.data_api}/trades", {"user": account_address, "limit": 20})
+                if isinstance(trades_raw, list):
+                    result["recent_trades"] = trades_raw
+                    result["trades_count"] = len(trades_raw)
+                    read_only_ok = True
+            except Exception as exc:
+                result["warnings"].append(f"trades lookup failed: {exc}")
 
-        if balance_address and _is_solana_address(balance_address):
-            result["warnings"].append("Solana deposit address detected; syncing on-chain USDC only for wallet balance.")
+            try:
+                activity_raw = self.http_get(f"{self.config.data_api}/activity", {"user": account_address, "limit": 20})
+                if isinstance(activity_raw, list):
+                    result["recent_activity"] = activity_raw
+                    result["activity_count"] = len(activity_raw)
+                    read_only_ok = True
+            except Exception as exc:
+                result["warnings"].append(f"activity lookup failed: {exc}")
+
+        source_rows = []
+        total_wallet_balance = 0.0
+        balance_errors: list[str] = []
+        for source_address in balance_sources:
+            try:
+                source_balance = _get_onchain_usdc_balance(source_address)
+                source_rows.append({
+                    "address": source_address,
+                    "kind": "solana" if _is_solana_address(source_address) else "evm",
+                    "balance": round(source_balance, 4),
+                })
+                total_wallet_balance += source_balance
+                read_only_ok = True
+            except Exception as exc:
+                balance_errors.append(f"{source_address}: {exc}")
+        result["balance_sources"] = source_rows
+        if balance_errors:
+            result["warnings"].append("balance lookup partial: " + "; ".join(balance_errors[:3]))
+        result["wallet_balance"] = round(total_wallet_balance, 4)
+        if result.get("portfolio_value_source") in (None, "unknown"):
+            result["portfolio_value_source"] = "unavailable"
+        result["equity"] = round(total_wallet_balance + result["portfolio_value"], 4)
+        if balance_sources:
+            has_solana = any(_is_solana_address(addr) for addr in balance_sources)
+            has_evm = any(_is_evm_address(addr) for addr in balance_sources)
+            if has_solana and has_evm:
+                result["warnings"].append("Multiple balance sources detected; reading both Solana and EVM balances.")
+            elif has_solana:
+                result["warnings"].append("Solana deposit address detected; syncing on-chain USDC balance from Solana source.")
+            elif has_evm:
+                result["warnings"].append("EVM wallet detected; syncing on-chain USDC balance from Polygon source.")
 
         client = self._build_client()
         if isinstance(client, dict) and client.get("error"):
