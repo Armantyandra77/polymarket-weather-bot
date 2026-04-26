@@ -241,11 +241,11 @@
       display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; font-size: 11px; font-weight: 700;
       letter-spacing: 0.04em; text-transform: uppercase; border: 1px solid transparent;
     }
-    .trade-badge.live { background: rgba(34, 197, 94, 0.12); border-color: rgba(34, 197, 94, 0.22); color: #dcfce7; }
-    .trade-badge.open { background: rgba(56, 189, 248, 0.12); border-color: rgba(56, 189, 248, 0.22); color: #d9f3ff; }
-    .trade-badge.filled { background: rgba(124, 156, 255, 0.12); border-color: rgba(124, 156, 255, 0.22); color: #e1e8ff; }
-    .trade-badge.cancelled, .trade-badge.rejected, .trade-badge.failed { background: rgba(251, 113, 133, 0.12); border-color: rgba(251, 113, 133, 0.24); color: #ffe3e8; }
-    .trade-badge.unknown { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.22); color: #eef3fb; }
+    .trade-badge.live { background: rgba(34, 197, 94, 0.12); border-color: rgba(34, 197, 94, 0.22); color: #166534; }
+    .trade-badge.open { background: rgba(56, 189, 248, 0.12); border-color: rgba(56, 189, 248, 0.22); color: #075985; }
+    .trade-badge.filled { background: rgba(124, 156, 255, 0.12); border-color: rgba(124, 156, 255, 0.22); color: #3730a3; }
+    .trade-badge.cancelled, .trade-badge.rejected, .trade-badge.failed { background: rgba(251, 113, 133, 0.12); border-color: rgba(251, 113, 133, 0.24); color: #9f1239; }
+    .trade-badge.unknown { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.22); color: #475467; }
     .edgebar { height: 7px; border-radius: 999px; background: rgba(255,255,255,0.06); overflow: hidden; }
     .edgebar > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, rgba(96, 165, 250, 0.95), rgba(103, 232, 249, 0.95), rgba(39, 194, 106, 0.95)); }
     .footer { margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(148,163,184,0.18); color: var(--muted); font-size: 12px; line-height: 1.6; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
@@ -265,6 +265,7 @@
     .analytics-chip.good { background: rgba(34, 197, 94, 0.10); border-color: rgba(34, 197, 94, 0.18); color: #166534; }
     .analytics-chip.bad { background: rgba(251, 113, 133, 0.10); border-color: rgba(251, 113, 133, 0.18); color: #9f1239; }
     .analytics-chip.cyan { background: rgba(56, 189, 248, 0.10); border-color: rgba(56, 189, 248, 0.18); color: #075985; }
+    .analytics-chip.violet { background: rgba(139, 92, 246, 0.10); border-color: rgba(139, 92, 246, 0.18); color: #6d28d9; }
     .analytics-shell { display: grid; gap: 12px; }
     .analytics-side { display: grid; gap: 12px; }
     .analytics-side-title { font-size: 14px; font-weight: 800; color: #101828; letter-spacing: -0.02em; }
@@ -560,6 +561,7 @@
           <button class="btn btn-good" id="btn-resume">▶ Resume scan</button>
           <button class="btn btn-danger" id="btn-pause">⏸ Pause scan</button>
           <button class="btn btn-primary" id="btn-force">↻ Force rescan</button>
+          <button class="btn btn-good" id="btn-prepare-collateral">⇄ Prep collateral</button>
           <button class="btn" id="btn-refresh">⟳ Refresh now</button>
         </div>
       </div>
@@ -619,7 +621,7 @@
         <div class="section-head" style="margin-bottom:12px;">
           <div class="section-title">
             <div class="label" id="account-label">Live Account</div>
-            <h2 id="account-heading">Portfolio / Balance / Open Positions</h2>
+            <h2 id="account-heading">Portfolio / Collateral / Allowance</h2>
           </div>
           <div class="small-note" id="account-note">Awaiting account sync…</div>
         </div>
@@ -767,7 +769,7 @@
         settingsHeading: 'Bot Health & Controls',
         settingsNote: 'Live state, alerting, freshness, pause/rescan',
         accountLabel: 'Live Account',
-        accountHeading: 'Portfolio / Balance / Open Positions',
+        accountHeading: 'Portfolio / Collateral / Allowance',
         accountNote: 'Awaiting account sync…',
         analyticsLabel: 'Analytics',
         analyticsHeading: 'Live PnL Analytics',
@@ -824,7 +826,7 @@
         settingsHeading: 'Kesehatan Bot & Kontrol',
         settingsNote: 'State live, alerting, freshness, pause/rescan',
         accountLabel: 'Akun Live',
-        accountHeading: 'Portofolio / Balance / Posisi Terbuka',
+        accountHeading: 'Portofolio / Collateral / Allowance',
         accountNote: 'Menunggu sinkronisasi akun…',
         analyticsLabel: 'Analitik',
         analyticsHeading: 'Analitik PnL Live',
@@ -1448,17 +1450,25 @@
       const account = data.live_account || {};
       const profile = account.profile || {};
       const balance = account.balance || {};
-      const positions = account.positions || [];
+      const positions = (account.positions && account.positions.length ? account.positions : (account.live_positions && account.live_positions.length ? account.live_positions : (data.live_positions || [])));
       const status = account.status || (account.enabled ? 'partial' : 'disabled');
       const statusTone = status === 'connected' ? 'good' : status === 'read_only' ? 'cyan' : status === 'partial' ? 'amber' : 'bad';
       const wallet = account.wallet_address || profile.proxy_wallet || '—';
       const deposit = account.deposit_address || '—';
       const proxy = account.proxy_address || profile.proxy_wallet || wallet;
       const authType = account.authentication_type || '—';
+      const authLayers = account.auth_layers || {};
+      const signer = account.clob_signer_address || authLayers.signer_address || account.signer_address || '—';
+      const shortSigner = shortId(signer);
+      const l1Ready = !!authLayers.l1_private_key;
+      const l2Ready = !!authLayers.l2_api_creds;
       const name = profile.name || profile.pseudonym || profile.x_username || 'Live account';
       const synced = account.synced_at ? t(account.synced_at) : '—';
       const buyingPower = Number(balance.allowance ?? 0) || 0;
       const cashBalance = Number(balance.balance ?? 0) || 0;
+      const collateralBalance = Number(balance.collateral_balance ?? cashBalance) || 0;
+      const collateralAllowance = Number(balance.collateral_allowance ?? buyingPower) || 0;
+      const collateralFlow = account.collateral_flow || balance.flow || {};
       const portfolioValue = Number(account.portfolio_value ?? 0) || 0;
       const portfolioSource = account.portfolio_value_source || 'unknown';
       const portfolioTrace = account.portfolio_value_trace || {};
@@ -1469,13 +1479,17 @@
       const shortProxy = shortId(proxy);
       const shortDeposit = shortId(deposit);
       const balanceSourceSummary = summarizeBalanceSources(account.balance_sources || []);
+      const collateralStatus = collateralFlow.status || (collateralBalance > 0 ? 'ready' : cashBalance > 0 ? 'needs_wrap' : 'needs_funding');
+      const shortFlow = shortSource(collateralStatus);
 
       const summary = [
         ['Status', status, statusTone],
         ['Equity', money(equity), 'cyan'],
         ['Portfolio Value', money(portfolioValue), 'good'],
         ['Wallet Balance', money(Number(account.wallet_balance ?? cashBalance) || 0), 'amber'],
-        ['Buying Power', money(buyingPower), 'blue'],
+        ['CLOB Collateral', money(collateralBalance), collateralBalance > 0 ? 'good' : 'amber'],
+        ['Allowance', money(collateralAllowance), collateralAllowance > 0 ? 'blue' : 'amber'],
+        ['Flow', shortFlow, collateralStatus === 'ready' ? 'good' : 'amber'],
         ['Open Positions', positionsCount, 'good'],
         ['Open Orders', openOrders, 'blue'],
       ];
@@ -1500,9 +1514,10 @@
         </div>
         <div class="analytics-rail">
           <span class="analytics-chip ${statusTone}">${esc(status)}</span>
-          <span class="analytics-chip cyan">auth ${esc(authType)}</span>
-          <span class="analytics-chip good">${esc(positionsCount)} position(s)</span>
-          <span class="analytics-chip bad">${esc(openOrders)} open order(s)</span>
+          <span class="analytics-chip ${l1Ready ? 'good' : 'bad'}">L1 ${esc(l1Ready ? 'ready' : 'missing')}</span>
+          <span class="analytics-chip ${l2Ready ? 'good' : 'bad'}">L2 ${esc(l2Ready ? 'ready' : 'missing')}</span>
+          <span class="analytics-chip cyan">${esc(positionsCount)} position(s)</span>
+          <span class="analytics-chip violet">signer ${esc(shortSigner)}</span>
         </div>
         <div class="account-quick">
           <div class="account-quick-card">
@@ -1511,8 +1526,8 @@
             <div style="margin-top:8px;display:flex;justify-content:flex-end;"><button class="copy-btn" type="button" data-copy="${esc(proxy)}">Copy</button></div>
           </div>
           <div class="account-quick-card">
-            <div class="account-quick-k">Auth</div>
-            <div class="account-quick-v mono">${esc(authType)}</div>
+            <div class="account-quick-k">Signer</div>
+            <div class="account-quick-v mono" title="${esc(signer)}">${esc(shortSigner)}</div>
           </div>
           <div class="account-quick-card">
             <div class="account-quick-k">Deposit</div>
@@ -1529,10 +1544,13 @@
           <div class="account-chip"><div class="account-chip-k">Wallet</div><div class="account-chip-v mono" title="${esc(wallet)}">${esc(shortWallet)}</div></div>
           <div class="account-chip"><div class="account-chip-k">Proxy</div><div class="account-chip-v mono" title="${esc(proxy)}">${esc(shortProxy)}</div></div>
           <div class="account-chip"><div class="account-chip-k">Deposit</div><div class="account-chip-v mono" title="${esc(deposit)}">${esc(shortDeposit)}</div></div>
+          <div class="account-chip"><div class="account-chip-k">Signer</div><div class="account-chip-v mono" title="${esc(signer)}">${esc(shortSigner)}</div></div>
           <div class="account-chip"><div class="account-chip-k">Portfolio src</div><div class="account-chip-v mono" title="${esc(JSON.stringify(portfolioTrace))}">${esc(shortSource(portfolioSource))}</div></div>
           <div class="account-chip"><div class="account-chip-k">Balance src</div><div class="account-chip-v mono" title="${esc(JSON.stringify(account.balance_sources || []))}">${esc(balanceSourceSummary)}</div></div>
+          <div class="account-chip"><div class="account-chip-k">Collateral</div><div class="account-chip-v mono">${esc(money(collateralBalance))}</div></div>
+          <div class="account-chip"><div class="account-chip-k">Flow</div><div class="account-chip-v mono" title="${esc(JSON.stringify(collateralFlow))}">${esc(shortFlow)}</div></div>
         </div>
-        <div class="account-note">${warnings.length ? `Warnings: ${warnings.map(esc).join(' • ')}` : 'Live account sync aktif dan siap dipantau.'}${errors.length ? `<br/>Errors: ${errors.map(esc).join(' • ')}` : ''}</div>
+        <div class="account-note">${warnings.length ? `Warnings: ${warnings.map(esc).join(' • ')}` : 'Live account sync aktif dan siap dipantau.'}${errors.length ? `<br/>Errors: ${errors.map(esc).join(' • ')}` : ''}<br/>Auth type: ${esc(authType)} • Collateral: ${esc(collateralStatus)}${collateralFlow.note ? ` • ${esc(collateralFlow.note)}` : ''}</div>
       `;
 
       const activitySummary = data.order_activity_summary || {};
@@ -1999,6 +2017,15 @@
     document.getElementById('btn-force').addEventListener('click', async () => {
       try {
         await postControl({ action: 'scan' });
+        await refreshAll();
+      } catch (err) {
+        showError(err);
+      }
+    });
+
+    document.getElementById('btn-prepare-collateral').addEventListener('click', async () => {
+      try {
+        await postControl({ action: 'prepare_collateral' });
         await refreshAll();
       } catch (err) {
         showError(err);

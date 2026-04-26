@@ -9,6 +9,7 @@ from polymarket_weather_bot.weather_sources import build_forecast_ensemble
 from polymarket_weather_bot.executor import PolymarketLiveExecutor
 from polymarket_weather_bot.notifier import TelegramNotifier
 from polymarket_weather_bot.telegram_commands import TelegramCommandService
+from polymarket_weather_bot.run_bot import _clear_stale_signer_block
 
 
 def test_parse_temperature_range_city():
@@ -264,7 +265,7 @@ def test_live_account_sync_normalizes_profile_positions_and_balance():
         def get_balance_allowance(self, params=None):
             return {'balance': '12.34', 'allowance': '20.00'}
 
-        def get_orders(self, params=None, next_cursor='MA=='):
+        def get_open_orders(self, params=None):
             return [{'id': 'order-1'}]
 
     sync = PolymarketAccountSync(
@@ -292,7 +293,7 @@ def test_live_account_sync_supports_solana_deposit_balance(monkeypatch):
         def get_balance_allowance(self, params=None):
             return {'balance': '3.69', 'allowance': '0.00'}
 
-        def get_orders(self, params=None, next_cursor='MA=='):
+        def get_open_orders(self, params=None):
             return []
 
     sync = PolymarketAccountSync(
@@ -313,6 +314,83 @@ def test_live_account_sync_supports_solana_deposit_balance(monkeypatch):
     assert result['positions_count'] == 0
     assert result['open_orders_count'] == 0
     assert result['balance_sources'][0]['kind'] == 'solana'
+
+
+def test_live_account_sync_refreshes_stale_clob_balance_from_wallet(monkeypatch):
+    monkeypatch.setattr('polymarket_weather_bot.account._get_onchain_usdc_balance', lambda addr: 7.25 if addr == '0x1234567890abcdef1234567890abcdef12345678' else 0.0)
+
+    class FakeClient:
+        def __init__(self):
+            self.calls = []
+            self.refreshed = False
+            self.signer = type('Signer', (), {'address': lambda self: '0x1234567890abcdef1234567890abcdef12345678'})()
+
+        def get_balance_allowance(self, params=None):
+            self.calls.append('get_balance_allowance')
+            if self.refreshed:
+                return {'balance': '7.25', 'allowance': '7.25'}
+            return {'balance': '0', 'allowance': '0'}
+
+        def update_balance_allowance(self, params=None):
+            self.calls.append('update_balance_allowance')
+            self.refreshed = True
+            return {'balance': '7.25', 'allowance': '7.25'}
+
+        def get_open_orders(self, params=None):
+            self.calls.append('get_open_orders')
+            return []
+
+    client = FakeClient()
+    sync = PolymarketAccountSync(
+        PolymarketAccountConfig(
+            wallet_address='0x1234567890abcdef1234567890abcdef12345678',
+            private_key='0xdeadbeef',
+        ),
+        http_get=lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError('should not call public endpoints in this test')),
+        client_factory=lambda config: client,
+    )
+    result = sync.sync()
+    assert result['status'] == 'connected'
+    assert result['wallet_balance'] == 7.25
+    assert result['balance']['balance'] == 7.25
+    assert result['balance']['allowance'] == 7.25
+    assert result['balance']['refreshed'] is True
+    assert result['balance']['source'] == 'clob-collateral'
+    assert result['clob_signer_address'] == '0x1234567890abcdef1234567890abcdef12345678'
+    assert result['auth_layers']['signer_address'] == '0x1234567890abcdef1234567890abcdef12345678'
+    assert client.calls.count('update_balance_allowance') == 1
+    assert client.calls.count('get_balance_allowance') == 2
+    assert client.calls.count('get_open_orders') == 1
+
+
+def test_live_account_sync_records_signer_address_without_blocking(monkeypatch):
+    monkeypatch.setattr('polymarket_weather_bot.account._get_onchain_usdc_balance', lambda addr: 14.4616 if addr == '0x66025B8D4004CF5a6b288e80fCe16738D819cB25' else 0.0)
+
+    class FakeClient:
+        def __init__(self):
+            self.signer = type('Signer', (), {'address': lambda self: '0xa035Ba4e9e99A3638468B9b29C2F1788BbBFdE04'})()
+
+        def get_balance_allowance(self, params=None):
+            return {'balance': '0', 'allowance': '0'}
+
+        def get_open_orders(self, params=None):
+            return []
+
+    sync = PolymarketAccountSync(
+        PolymarketAccountConfig(
+            wallet_address='0x66025B8D4004CF5a6b288e80fCe16738D819cB25',
+            proxy_address='0x66025B8D4004CF5a6b288e80fCe16738D819cB25',
+            private_key='0xdeadbeef',
+        ),
+        http_get=lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError('should not call public endpoints in this test')),
+        client_factory=lambda config: FakeClient(),
+    )
+    result = sync.sync()
+    assert result['status'] == 'connected'
+    assert result['trading_ready'] is True
+    assert result['clob_signer_address'] == '0xa035Ba4e9e99A3638468B9b29C2F1788BbBFdE04'
+    assert result['auth_layers']['signer_address'] == '0xa035Ba4e9e99A3638468B9b29C2F1788BbBFdE04'
+    assert not any('does not match the funded wallet/proxy address' in w for w in result['warnings'])
 
 
 def test_dashboard_state_and_controls(tmp_path):
@@ -466,7 +544,8 @@ def test_bot_engine_switches_to_live_executor(monkeypatch, tmp_path):
     assert isinstance(engine.executor, PolymarketLiveExecutor)
 
 
-def test_live_executor_places_market_order_and_persists_trade(tmp_path):
+def test_live_executor_places_market_order_and_persists_trade(monkeypatch, tmp_path):
+    monkeypatch.setenv('BOT_LIVE_ORDER_STYLE', 'market')
     store = Store(str(tmp_path / 'bot.db'))
     config = PolymarketAccountConfig(
         wallet_address='0x1234567890abcdef1234567890abcdef12345678',
@@ -497,7 +576,7 @@ def test_live_executor_places_market_order_and_persists_trade(tmp_path):
             assert order_args.amount == 5.0
             return {'local': 'order'}
 
-        def post_order(self, order, orderType=None, post_only=False):
+        def post_order(self, order, order_type=None, post_only=False):
             assert order == {'local': 'order'}
             return {
                 'orderID': 'order-123',
@@ -506,7 +585,7 @@ def test_live_executor_places_market_order_and_persists_trade(tmp_path):
                 'sizeMatched': '45.4545',
             }
 
-        def get_orders(self, params=None, next_cursor='MA=='):
+        def get_open_orders(self, params=None):
             return []
 
     executor = PolymarketLiveExecutor(
@@ -551,6 +630,258 @@ def test_live_executor_places_market_order_and_persists_trade(tmp_path):
     assert trades[0]['mode'] == 'live'
     assert trades[0]['status'] == 'filled'
     assert trades[0]['order_id'] == 'order-123'
+
+
+def test_live_executor_refreshes_balance_allowance_from_last_snapshot(monkeypatch, tmp_path):
+    monkeypatch.setenv('BOT_LIVE_ORDER_STYLE', 'market')
+    store = Store(str(tmp_path / 'bot.db'))
+    store.save_snapshot({'live_account': {'wallet_balance': 14.4616}})
+    config = PolymarketAccountConfig(
+        wallet_address='0x1234567890abcdef1234567890abcdef12345678',
+        private_key='0xdeadbeef',
+    )
+
+    class FakeBook:
+        tick_size = '0.01'
+        asks = []
+
+    class FakeClient:
+        def __init__(self):
+            self.calls = []
+            self.refreshed = False
+
+        def get_balance_allowance(self, params=None):
+            self.calls.append('get_balance_allowance')
+            if self.refreshed:
+                return {'balance': '14.4616', 'allowance': '14.4616'}
+            return {'balance': '0', 'allowance': '0'}
+
+        def update_balance_allowance(self, params=None):
+            self.calls.append('update_balance_allowance')
+            self.refreshed = True
+            return {'balance': '14.4616', 'allowance': '14.4616'}
+
+        def get_order_book(self, token_id):
+            return FakeBook()
+
+        def calculate_market_price(self, token_id, side, amount, order_type):
+            return 0.10
+
+        def create_market_order(self, order_args):
+            return {'local': 'order'}
+
+        def post_order(self, order, order_type=None, post_only=False):
+            return {'orderID': 'order-allowance'}
+
+        def get_open_orders(self, params=None):
+            return []
+
+    client = FakeClient()
+    executor = PolymarketLiveExecutor(
+        store=store,
+        config=config,
+        client_factory=lambda cfg: client,
+    )
+    market = Market(
+        id='m-allowance',
+        question='Will Seoul be between 17°C and 18°C on 2030-04-17?',
+        slug='seoul-weather',
+        condition_id='0xabc',
+        yes_price=0.20,
+        no_price=0.80,
+        volume=10000,
+        liquidity=5000,
+        active=True,
+        closed=False,
+        end_date='2030-04-17T00:00:00Z',
+        clob_yes_token='yes-token',
+        clob_no_token='no-token',
+    )
+    signal = Signal(
+        market_id='m-allowance',
+        question=market.question,
+        city='Seoul',
+        date='2030-04-17',
+        market_prob=0.20,
+        model_prob=0.72,
+        edge=0.52,
+        action='BUY_YES',
+        confidence=0.9,
+        rationale='city=Seoul; edge=+52.00%',
+        generated_at='2030-04-17T00:00:00Z',
+    )
+    pos = executor.open_position(signal, 1.0, market=market)
+    assert pos is not None
+    assert client.calls.count('update_balance_allowance') == 1
+    assert client.calls.count('get_balance_allowance') == 1
+
+
+def test_live_executor_records_geoblock_and_pauses_on_region_restriction(tmp_path, monkeypatch):
+    monkeypatch.setenv('BOT_LIVE_ORDER_STYLE', 'limit')
+    store = Store(str(tmp_path / 'bot.db'))
+    config = PolymarketAccountConfig(
+        wallet_address='0x1234567890abcdef1234567890abcdef12345678',
+        private_key='0xdeadbeef',
+    )
+
+    class FakeBookLevel:
+        def __init__(self, price):
+            self.price = price
+
+    class FakeBook:
+        tick_size = '0.01'
+        asks = [FakeBookLevel('0.12')]
+
+    class FakeClient:
+        def get_order_book(self, token_id):
+            return FakeBook()
+
+        def create_order(self, order_args):
+            return {'local': 'order'}
+
+        def post_order(self, order, order_type=None, post_only=False):
+            raise RuntimeError('403 Trading restricted in your region')
+
+    executor = PolymarketLiveExecutor(
+        store=store,
+        config=config,
+        client_factory=lambda cfg: FakeClient(),
+    )
+    market = Market(
+        id='m-geo',
+        question='Will Seoul be between 17°C and 18°C on 2030-04-17?',
+        slug='seoul-weather',
+        condition_id='0xabc',
+        yes_price=0.20,
+        no_price=0.80,
+        volume=10000,
+        liquidity=5000,
+        active=True,
+        closed=False,
+        end_date='2030-04-17T00:00:00Z',
+        clob_yes_token='yes-token',
+        clob_no_token='no-token',
+    )
+    signal = Signal(
+        market_id='m-geo',
+        question=market.question,
+        city='Seoul',
+        date='2030-04-17',
+        market_prob=0.20,
+        model_prob=0.72,
+        edge=0.52,
+        action='BUY_YES',
+        confidence=0.96,
+        rationale='city=Seoul; edge=+52.00%',
+        generated_at='2030-04-17T00:00:00Z',
+    )
+
+    pos = executor.open_position(signal, 1.0, market=market)
+
+    assert pos is None
+    controls = store.get_controls()
+    assert controls['paused'] is True
+    assert controls['live_execution_blocked'] is True
+    assert 'region' in str(controls['live_execution_block_reason']).lower()
+    errors = store.get_errors(5)
+    assert errors[0]['stage'] == 'live_order_geoblock'
+    assert errors[0]['market_id'] == 'm-geo'
+
+
+def test_clear_stale_signer_block_resets_persisted_controls(tmp_path):
+    store = Store(str(tmp_path / 'bot.db'))
+    store.set_control('paused', True)
+    store.set_control('live_execution_blocked', True)
+    store.set_control('live_execution_block_reason', 'CLOB signer address mismatch')
+    store.set_control('live_execution_block_stage', 'signer_mismatch')
+
+    cleared = _clear_stale_signer_block(store, {'status': 'connected', 'trading_ready': True})
+
+    assert cleared is True
+    controls = store.get_controls()
+    assert controls.get('paused', False) is False
+    assert controls.get('live_execution_blocked', False) is False
+    assert controls.get('live_execution_block_reason') in ('', None)
+    assert controls.get('live_execution_block_stage') in ('', None)
+
+
+def test_live_executor_does_not_block_on_signer_mismatch(monkeypatch, tmp_path):
+    monkeypatch.setenv('BOT_LIVE_ORDER_STYLE', 'market')
+    store = Store(str(tmp_path / 'bot.db'))
+    config = PolymarketAccountConfig(
+        wallet_address='0x66025B8D4004CF5a6b288e80fCe16738D819cB25',
+        proxy_address='0x66025B8D4004CF5a6b288e80fCe16738D819cB25',
+        private_key='0xdeadbeef',
+    )
+
+    class FakeClient:
+        def __init__(self):
+            self.signer = type('Signer', (), {'address': lambda self: '0xa035Ba4e9e99A3638468B9b29C2F1788BbBFdE04'})()
+
+        def get_order_book(self, token_id):
+            return type('Book', (), {
+                'tick_size': '0.01',
+                'asks': [type('Ask', (), {'price': '0.55'})()],
+            })()
+
+        def get_balance_allowance(self, params=None):
+            return {'balance': '0', 'allowance': '0'}
+
+        def update_balance_allowance(self, params=None):
+            return {'balance': '0', 'allowance': '0'}
+
+        def calculate_market_price(self, token_id, side, amount_usd, order_type):
+            return 0.55
+
+        def create_market_order(self, args):
+            return {'orderID': 'order-1', 'price': 0.55, 'size': 1.8182}
+
+        def post_order(self, order, order_type=None, post_only=None):
+            return {'orderID': 'order-1', 'status': 'filled', 'avgPrice': '0.55', 'sizeMatched': '1.8182'}
+
+    executor = PolymarketLiveExecutor(
+        store=store,
+        config=config,
+        client_factory=lambda cfg: FakeClient(),
+    )
+    market = Market(
+        id='m-signer',
+        question='Will Seoul be between 17°C and 18°C on 2030-04-17?',
+        slug='seoul-weather',
+        condition_id='0xabc',
+        yes_price=0.20,
+        no_price=0.80,
+        volume=10000,
+        liquidity=5000,
+        active=True,
+        closed=False,
+        end_date='2030-04-17T00:00:00Z',
+        clob_yes_token='yes-token',
+        clob_no_token='no-token',
+    )
+    signal = Signal(
+        market_id='m-signer',
+        question=market.question,
+        city='Seoul',
+        date='2030-04-17',
+        market_prob=0.20,
+        model_prob=0.72,
+        edge=0.52,
+        action='BUY_YES',
+        confidence=0.96,
+        rationale='city=Seoul; edge=+52.00%',
+        generated_at='2030-04-17T00:00:00Z',
+    )
+
+    pos = executor.open_position(signal, 1.0, market=market)
+
+    assert pos is not None
+    controls = store.get_controls()
+    assert controls.get('paused', False) is False
+    assert controls.get('live_execution_blocked', False) is False
+    assert controls.get('live_execution_block_stage') in ('', None)
+    errors = store.get_errors(5)
+    assert all(err.get('stage') != 'live_order_signer_mismatch' for err in errors)
 
 
 def test_telegram_command_service_records_history_and_dashboard_state(tmp_path):

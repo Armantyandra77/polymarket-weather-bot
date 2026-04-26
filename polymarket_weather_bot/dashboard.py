@@ -367,7 +367,7 @@ class Handler(BaseHTTPRequestHandler):
             payload = {}
 
         updates: Dict[str, Any] = {}
-        for key in ('paused', 'force_scan'):
+        for key in ('paused', 'force_scan', 'prepare_collateral'):
             if key in payload:
                 updates[key] = _truthy(payload[key])
                 self.state.store.set_control(key, updates[key])
@@ -387,6 +387,9 @@ class Handler(BaseHTTPRequestHandler):
             elif action in ('scan', 'rescan', 'force_scan'):
                 updates['force_scan'] = True
                 self.state.store.set_control('force_scan', True)
+            elif action in ('prepare_collateral', 'prep_collateral', 'collateral'):
+                updates['prepare_collateral'] = True
+                self.state.store.set_control('prepare_collateral', True)
 
         response = {
             'ok': True,

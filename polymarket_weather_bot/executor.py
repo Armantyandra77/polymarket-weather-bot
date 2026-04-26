@@ -4,8 +4,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from py_clob_client.client import ClobClient
-from py_clob_client.clob_types import MarketOrderArgs, OpenOrderParams, OrderArgs, OrderType
+from .clob_sdk import AssetType, BalanceAllowanceParams, ClobClient, MarketOrderArgs, OpenOrderParams, OrderArgs, OrderType, ApiCreds, create_or_derive_api_creds, fetch_open_orders
 
 from .account import PolymarketAccountConfig
 from .models import Market, Position, Signal, Trade
@@ -89,8 +88,6 @@ class PolymarketLiveExecutor:
 
         creds = None
         if self.config.api_key and self.config.api_secret and self.config.api_passphrase:
-            from py_clob_client.clob_types import ApiCreds
-
             creds = ApiCreds(
                 api_key=self.config.api_key,
                 api_secret=self.config.api_secret,
@@ -102,11 +99,11 @@ class PolymarketLiveExecutor:
             key=self.config.private_key,
             chain_id=self.config.chain_id,
             creds=creds,
-            signature_type=self.config.signature_type,
-            funder=self.config.funder_address,
+            signature_type=self.config.resolved_signature_type,
+            funder=self.config.resolved_funder_address,
         )
         if creds is None:
-            client.set_api_creds(client.create_or_derive_api_creds())
+            client.set_api_creds(create_or_derive_api_creds(client))
         self._client = client
         return self._client
 
@@ -124,7 +121,7 @@ class PolymarketLiveExecutor:
             return market.clob_no_token
         raise ValueError(f"missing CLOB token for {signal.action} on market {market.id}")
 
-    def _resolve_limit_price(self, client: ClobClient, token_id: str, amount_usd: float) -> float:
+    def _resolve_limit_price(self, client: ClobClient, token_id: str, amount_usd: float, side: str = "BUY", post_only: bool = False) -> float:
         try:
             book = client.get_order_book(token_id)
         except Exception:
@@ -132,6 +129,7 @@ class PolymarketLiveExecutor:
 
         tick = 0.01
         best_ask = None
+        best_bid = None
         if book is not None:
             try:
                 tick = _safe_float(getattr(book, "tick_size", None), tick) or tick
@@ -143,15 +141,28 @@ class PolymarketLiveExecutor:
                     best_ask = _safe_float(getattr(asks[0], "price", None), None)
             except Exception:
                 best_ask = None
+            try:
+                bids = getattr(book, "bids", None) or []
+                if bids:
+                    best_bid = _safe_float(getattr(bids[0], "price", None), None)
+            except Exception:
+                best_bid = None
 
         if best_ask is None or best_ask <= 0:
             try:
-                estimated = client.calculate_market_price(token_id, "BUY", amount_usd, OrderType.FOK)
+                estimated = client.calculate_market_price(token_id, side, amount_usd, OrderType.FOK)
                 best_ask = _safe_float(estimated, 0.0)
             except Exception:
                 best_ask = 0.0
 
         price = max(tick, min(best_ask or 0.0, 1.0 - tick))
+        if post_only:
+            if side.upper() == "BUY":
+                anchor = best_ask if best_ask and best_ask > 0 else price
+                price = max(tick, min(anchor - tick, 1.0 - tick))
+            else:
+                anchor = best_bid if best_bid and best_bid > 0 else price
+                price = max(tick, min(anchor + tick, 1.0 - tick))
         if self.tick_buffer_bps > 0:
             price = max(tick, min(price * (1.0 + self.tick_buffer_bps / 10000.0), 1.0 - tick))
         return round(price, 4)
@@ -203,7 +214,7 @@ class PolymarketLiveExecutor:
         if client is None:
             return []
         try:
-            orders = client.get_orders(OpenOrderParams())
+            orders = fetch_open_orders(client, OpenOrderParams())
         except Exception:
             return []
         if not isinstance(orders, list):
@@ -230,6 +241,66 @@ class PolymarketLiveExecutor:
         if client is None:
             return None
         return client.cancel_all()
+
+    def _is_region_restriction_error(self, exc: Exception) -> bool:
+        message = str(exc).lower()
+        return any(
+            phrase in message
+            for phrase in (
+                "trading restricted",
+                "restricted in your region",
+                "region restricted",
+                "geoblock",
+                "geo-block",
+                "not available in your region",
+            )
+        ) or ("403" in message and "region" in message)
+
+    def _record_geoblock(self, exc: Exception, signal: Signal, market: Market, amount_usd: float) -> None:
+        reason = str(exc)
+        payload = {
+            "stage": "live_order_geoblock",
+            "error": reason,
+            "market_id": signal.market_id,
+            "question": signal.question,
+            "city": signal.city,
+            "date": signal.date,
+            "action": signal.action,
+            "amount_usd": round(amount_usd, 4),
+            "market_slug": market.slug,
+            "recommendation": "Move the live executor to a Polymarket-supported region before retrying live orders.",
+        }
+        self.store.save_error(payload)
+        self.store.set_control("paused", True)
+        self.store.set_control("live_execution_blocked", True)
+        self.store.set_control("live_execution_block_reason", reason)
+        self.store.set_control("live_execution_block_stage", "geoblock")
+
+    def _signer_address(self, client: ClobClient) -> Optional[str]:
+        try:
+            signer_obj = getattr(client, "signer", None)
+            signer_fn = getattr(signer_obj, "address", None)
+            address = signer_fn() if callable(signer_fn) else signer_fn
+            return str(address) if address else None
+        except Exception:
+            return None
+
+    def _refresh_balance_allowance_if_needed(self, client: ClobClient) -> None:
+        try:
+            snapshot = self.store.get_last_snapshot() or {}
+            live_account = snapshot.get("live_account") if isinstance(snapshot, dict) else {}
+            wallet_balance = float((live_account or {}).get("wallet_balance") or 0.0)
+            if wallet_balance <= 0:
+                return
+            from .clob_sdk import normalize_balance_allowance
+            collateral = normalize_balance_allowance(client.get_balance_allowance(params=BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)))
+            balance = float(collateral.get("balance") or 0.0)
+            allowance = float(collateral.get("allowance") or 0.0)
+            if balance > 0 or allowance > 0:
+                return
+            client.update_balance_allowance(params=BalanceAllowanceParams(asset_type=AssetType.COLLATERAL))
+        except Exception:
+            return
 
     def mark_to_market(self, market_id: str, current_price: float):
         positions = self.store.get_positions()
@@ -271,42 +342,50 @@ class PolymarketLiveExecutor:
         side = self._resolve_side(signal)
         token_id = self._resolve_token(market, signal)
 
-        if self.order_style == "limit":
-            limit_price = self._resolve_limit_price(client, token_id, amount_usd)
-            size = round(amount_usd / max(limit_price, 0.01), 4)
-            order = client.create_order(
-                OrderArgs(
-                    token_id=token_id,
-                    price=limit_price,
-                    size=size,
-                    side=side,
+        self._refresh_balance_allowance_if_needed(client)
+
+        try:
+            if self.order_style == "limit":
+                limit_price = self._resolve_limit_price(client, token_id, amount_usd, side=side, post_only=self.post_only)
+                size = round(amount_usd / max(limit_price, 0.01), 4)
+                order = client.create_order(
+                    OrderArgs(
+                        token_id=token_id,
+                        price=limit_price,
+                        size=size,
+                        side=side,
+                    )
                 )
-            )
-            response = client.post_order(order, orderType=OrderType.GTC, post_only=self.post_only)
-            order_id = self._extract_order_id(response)
-            status = self._extract_status(response)
-            price = self._extract_fill_price(response, limit_price)
-            qty = self._extract_filled_quantity(response, amount_usd, price)
-            position_status = "open" if status in {"filled", "open", "unknown"} else status
-            trade_status = status if status != "unknown" else "submitted"
-        else:
-            estimated_price = self._resolve_limit_price(client, token_id, amount_usd)
-            order = client.create_market_order(
-                MarketOrderArgs(
-                    token_id=token_id,
-                    amount=amount_usd,
-                    side=side,
-                    price=estimated_price,
-                    order_type=OrderType.FOK,
+                response = client.post_order(order, order_type=OrderType.GTC, post_only=self.post_only)
+                order_id = self._extract_order_id(response)
+                status = self._extract_status(response)
+                price = self._extract_fill_price(response, limit_price)
+                qty = self._extract_filled_quantity(response, amount_usd, price)
+                position_status = "open" if status in {"filled", "open", "unknown"} else status
+                trade_status = status if status != "unknown" else "submitted"
+            else:
+                estimated_price = self._resolve_limit_price(client, token_id, amount_usd)
+                order = client.create_market_order(
+                    MarketOrderArgs(
+                        token_id=token_id,
+                        amount=amount_usd,
+                        side=side,
+                        price=estimated_price,
+                        order_type=OrderType.FOK,
+                    )
                 )
-            )
-            response = client.post_order(order, orderType=OrderType.FOK)
-            order_id = self._extract_order_id(response)
-            status = self._extract_status(response)
-            price = self._extract_fill_price(response, estimated_price)
-            qty = self._extract_filled_quantity(response, amount_usd, price)
-            position_status = "open" if status in {"filled", "open", "unknown"} else status
-            trade_status = status if status != "unknown" else "submitted"
+                response = client.post_order(order, order_type=OrderType.FOK)
+                order_id = self._extract_order_id(response)
+                status = self._extract_status(response)
+                price = self._extract_fill_price(response, estimated_price)
+                qty = self._extract_filled_quantity(response, amount_usd, price)
+                position_status = "open" if status in {"filled", "open", "unknown"} else status
+                trade_status = status if status != "unknown" else "submitted"
+        except Exception as exc:
+            if self._is_region_restriction_error(exc):
+                self._record_geoblock(exc, signal, market, amount_usd)
+                return None
+            raise
 
         now = datetime.now(timezone.utc).isoformat()
         position = Position(

@@ -11,6 +11,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .clob_sdk import (
+    AssetType,
+    BalanceAllowanceParams,
+    ClobClient,
+    ApiCreds,
+    OpenOrderParams,
+    create_or_derive_api_creds,
+    fetch_open_orders,
+    normalize_balance_allowance,
+    resolve_funder_address,
+    resolve_signature_type,
+)
+
 DATA_API = os.getenv("BOT_POLYMARKET_DATA_API", "https://data-api.polymarket.com")
 GAMMA_API = os.getenv("BOT_POLYMARKET_GAMMA_API", "https://gamma-api.polymarket.com")
 CLOB_API = os.getenv("BOT_POLYMARKET_CLOB_HOST", "https://clob.polymarket.com")
@@ -188,15 +201,43 @@ class PolymarketAccountConfig:
     signature_type: int = DEFAULT_SIGNATURE_TYPE
     clob_host: str = CLOB_API
 
+    @property
+    def resolved_funder_address(self) -> str | None:
+        return resolve_funder_address(self.funder_address, self.proxy_address, self.wallet_address)
+
+    @property
+    def resolved_signature_type(self) -> int:
+        return resolve_signature_type(
+            self.signature_type,
+            authentication_type=self.authentication_type,
+            proxy_address=self.proxy_address,
+            wallet_address=self.wallet_address,
+        )
+
     @classmethod
-    def from_env(cls) -> "PolymarketAccountConfig":
-        wallet_address = os.getenv("BOT_POLYMARKET_WALLET_ADDRESS") or os.getenv("BOT_POLYMARKET_PUBLIC_ADDRESS")
-        deposit_address = os.getenv("BOT_POLYMARKET_DEPOSIT_ADDRESS") or os.getenv("BOT_POLYMARKET_SOLANA_ADDRESS")
-        solana_address = os.getenv("BOT_POLYMARKET_SOLANA_ADDRESS") or os.getenv("BOT_POLYMARKET_SOLANA_DEPOSIT_ADDRESS")
-        funder_address = os.getenv("BOT_POLYMARKET_FUNDER_ADDRESS") or None
-        session_hint = _parse_session_hint(_read_text_env_or_file("BOT_POLYMARKET_SESSION_HINT", "BOT_POLYMARKET_SESSION_HINT_PATH"))
-        proxy_address = os.getenv("BOT_POLYMARKET_PROXY_ADDRESS") or session_hint.get("proxy_address") or None
-        authentication_type = os.getenv("BOT_POLYMARKET_AUTHENTICATION_TYPE") or session_hint.get("authentication_type") or None
+    def from_mapping(cls, env: Dict[str, str | None]) -> "PolymarketAccountConfig":
+        def _get(key: str, default: str | None = None) -> str | None:
+            value = env.get(key)
+            if value is None:
+                return default
+            text = str(value).strip()
+            return text or default
+
+        wallet_address = _get("BOT_POLYMARKET_WALLET_ADDRESS") or _get("BOT_POLYMARKET_PUBLIC_ADDRESS")
+        deposit_address = _get("BOT_POLYMARKET_DEPOSIT_ADDRESS") or _get("BOT_POLYMARKET_SOLANA_ADDRESS")
+        solana_address = _get("BOT_POLYMARKET_SOLANA_ADDRESS") or _get("BOT_POLYMARKET_SOLANA_DEPOSIT_ADDRESS")
+        funder_address = _get("BOT_POLYMARKET_FUNDER_ADDRESS")
+        session_hint_raw = _get("BOT_POLYMARKET_SESSION_HINT")
+        if not session_hint_raw:
+            session_hint_path = _get("BOT_POLYMARKET_SESSION_HINT_PATH")
+            if session_hint_path:
+                try:
+                    session_hint_raw = Path(session_hint_path).expanduser().read_text(encoding="utf-8").strip() or None
+                except Exception:
+                    session_hint_raw = None
+        session_hint = _parse_session_hint(session_hint_raw)
+        proxy_address = _get("BOT_POLYMARKET_PROXY_ADDRESS") or session_hint.get("proxy_address") or None
+        authentication_type = _get("BOT_POLYMARKET_AUTHENTICATION_TYPE") or session_hint.get("authentication_type") or None
         if not solana_address and _is_solana_address(deposit_address):
             solana_address = deposit_address
         return cls(
@@ -205,17 +246,21 @@ class PolymarketAccountConfig:
             deposit_address=deposit_address or proxy_address or wallet_address or funder_address,
             solana_address=solana_address or None,
             authentication_type=authentication_type,
-            private_key=os.getenv("BOT_POLYMARKET_PRIVATE_KEY") or None,
+            private_key=_get("BOT_POLYMARKET_PRIVATE_KEY"),
             funder_address=funder_address,
-            api_key=os.getenv("BOT_POLYMARKET_API_KEY") or None,
-            api_secret=os.getenv("BOT_POLYMARKET_API_SECRET") or None,
-            api_passphrase=os.getenv("BOT_POLYMARKET_API_PASSPHRASE") or None,
-            data_api=os.getenv("BOT_POLYMARKET_DATA_API", DATA_API),
-            gamma_api=os.getenv("BOT_POLYMARKET_GAMMA_API", GAMMA_API),
-            chain_id=int(os.getenv("BOT_POLYMARKET_CHAIN_ID", str(DEFAULT_CHAIN_ID))),
-            signature_type=int(os.getenv("BOT_POLYMARKET_SIGNATURE_TYPE", str(DEFAULT_SIGNATURE_TYPE))),
-            clob_host=os.getenv("BOT_POLYMARKET_CLOB_HOST", CLOB_API),
+            api_key=_get("BOT_POLYMARKET_API_KEY"),
+            api_secret=_get("BOT_POLYMARKET_API_SECRET"),
+            api_passphrase=_get("BOT_POLYMARKET_API_PASSPHRASE"),
+            data_api=_get("BOT_POLYMARKET_DATA_API", DATA_API) or DATA_API,
+            gamma_api=_get("BOT_POLYMARKET_GAMMA_API", GAMMA_API) or GAMMA_API,
+            chain_id=int(_get("BOT_POLYMARKET_CHAIN_ID", str(DEFAULT_CHAIN_ID)) or DEFAULT_CHAIN_ID),
+            signature_type=int(_get("BOT_POLYMARKET_SIGNATURE_TYPE", str(DEFAULT_SIGNATURE_TYPE)) or DEFAULT_SIGNATURE_TYPE),
+            clob_host=_get("BOT_POLYMARKET_CLOB_HOST", CLOB_API) or CLOB_API,
         )
+
+    @classmethod
+    def from_env(cls) -> "PolymarketAccountConfig":
+        return cls.from_mapping(dict(os.environ))
 
 
 
@@ -292,10 +337,9 @@ class PolymarketAccountSync:
             return None
 
         try:
-            from py_clob_client.client import ClobClient
-            from py_clob_client.clob_types import ApiCreds
+            from .clob_sdk import ApiCreds, create_or_derive_api_creds
         except Exception as exc:
-            return {"error": f"py_clob_client unavailable: {exc}"}
+            return {"error": f"polymarket clob sdk unavailable: {exc}"}
 
         creds = None
         if self.config.api_key and self.config.api_secret and self.config.api_passphrase:
@@ -311,24 +355,145 @@ class PolymarketAccountSync:
                 key=self.config.private_key,
                 chain_id=self.config.chain_id,
                 creds=creds,
-                signature_type=self.config.signature_type,
-                funder=self.config.funder_address,
+                signature_type=self.config.resolved_signature_type,
+                funder=self.config.resolved_funder_address,
             )
             if creds is None:
-                client.set_api_creds(client.create_or_derive_api_creds())
+                client.set_api_creds(create_or_derive_api_creds(client))
             self._client = client
             return self._client
         except Exception as exc:
             return {"error": str(exc)}
 
+    def _candidate_balance_sources(self) -> List[str]:
+        sources: List[str] = []
+        for candidate in (
+            self.config.deposit_address,
+            self.config.wallet_address,
+            self.config.proxy_address,
+            self.config.funder_address,
+        ):
+            if candidate and candidate not in sources:
+                sources.append(candidate)
+        return sources
+
+    def _collect_wallet_balance(self) -> tuple[float, List[Dict[str, Any]], List[str]]:
+        source_rows: List[Dict[str, Any]] = []
+        balance_errors: List[str] = []
+        total_wallet_balance = 0.0
+        for source_address in self._candidate_balance_sources():
+            try:
+                source_balance = _get_onchain_usdc_balance(source_address)
+                source_rows.append({
+                    "address": source_address,
+                    "kind": "solana" if _is_solana_address(source_address) else "evm",
+                    "balance": round(source_balance, 4),
+                })
+                total_wallet_balance += source_balance
+            except Exception as exc:
+                balance_errors.append(f"{source_address}: {exc}")
+        return round(total_wallet_balance, 4), source_rows, balance_errors
+
+    def _refresh_collateral_flow(self, client: ClobClient, wallet_balance: float, refresh_if_needed: bool = True) -> Dict[str, Any]:
+        from .clob_sdk import AssetType, BalanceAllowanceParams, normalize_balance_allowance
+
+        balance_params = BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
+        collateral = normalize_balance_allowance(client.get_balance_allowance(params=balance_params))
+        collateral_balance = float(collateral.get("balance") or 0.0)
+        collateral_allowance = float(collateral.get("allowance") or 0.0)
+        refreshed = False
+
+        if refresh_if_needed and wallet_balance > 0 and collateral_balance <= 0 and collateral_allowance <= 0:
+            try:
+                refresh_payload = client.update_balance_allowance(params=balance_params)
+                refreshed = True
+                if isinstance(refresh_payload, dict):
+                    collateral = normalize_balance_allowance(refresh_payload)
+                collateral = normalize_balance_allowance(client.get_balance_allowance(params=balance_params))
+                collateral_balance = float(collateral.get("balance") or 0.0)
+                collateral_allowance = float(collateral.get("allowance") or 0.0)
+            except Exception as refresh_exc:
+                return {
+                    "balance": collateral_balance,
+                    "allowance": collateral_allowance,
+                    "allowances": collateral.get("allowances") or {},
+                    "raw": collateral.get("raw") if isinstance(collateral, dict) else collateral,
+                    "refreshed": refreshed,
+                    "status": "refresh_failed",
+                    "stage": "update_balance_allowance",
+                    "needs_manual_wrap": wallet_balance > 0,
+                    "wallet_balance": wallet_balance,
+                    "note": f"balance allowance refresh failed: {refresh_exc}",
+                }
+
+        if collateral_balance > 0 or collateral_allowance > 0:
+            status = "ready"
+            stage = "collateral_ready"
+            note = "CLOB collateral and allowance are available for live orders."
+        elif wallet_balance > 0:
+            status = "needs_wrap"
+            stage = "wallet_to_clob_collateral"
+            note = "Wallet balance exists, but CLOB collateral is still zero; wrap/transfer into pUSD collateral and approve allowance before live orders."
+        else:
+            status = "needs_funding"
+            stage = "wallet_funded"
+            note = "No wallet balance detected yet; deposit funds before trying to prepare CLOB collateral."
+
+        return {
+            "balance": collateral_balance,
+            "allowance": collateral_allowance,
+            "allowances": collateral.get("allowances") or {},
+            "raw": collateral.get("raw") if isinstance(collateral, dict) else collateral,
+            "refreshed": refreshed,
+            "status": status,
+            "stage": stage,
+            "needs_manual_wrap": status == "needs_wrap",
+            "wallet_balance": wallet_balance,
+            "note": note,
+        }
+
+    def prepare_collateral(self) -> Dict[str, Any]:
+        client = self._build_client()
+        if client is None:
+            return {
+                "status": "disabled",
+                "stage": "missing_client",
+                "note": "Live CLOB client is unavailable.",
+                "balance": 0.0,
+                "allowance": 0.0,
+                "wallet_balance": 0.0,
+                "refreshed": False,
+                "needs_manual_wrap": False,
+            }
+        if isinstance(client, dict) and client.get("error"):
+            return {
+                "status": "error",
+                "stage": "client_error",
+                "note": client["error"],
+                "balance": 0.0,
+                "allowance": 0.0,
+                "wallet_balance": 0.0,
+                "refreshed": False,
+                "needs_manual_wrap": False,
+            }
+        wallet_balance, _, balance_errors = self._collect_wallet_balance()
+        flow = self._refresh_collateral_flow(client, wallet_balance, refresh_if_needed=True)
+        if balance_errors:
+            flow["balance_errors"] = balance_errors
+        return flow
+
     def sync(self) -> Dict[str, Any]:
-        result: Dict[str, Any] = {
+        account_address = self.config.proxy_address or self.config.wallet_address
+        wallet_address = self.config.wallet_address or self.config.proxy_address
+        result = {
             "enabled": self.enabled(),
             "status": "disabled",
-            "wallet_address": self.config.wallet_address,
+            "account_address": account_address,
+            "wallet_address": wallet_address,
             "proxy_address": self.config.proxy_address,
             "authentication_type": self.config.authentication_type,
             "deposit_address": self.config.deposit_address,
+            "clob_signer_address": None,
             "profile": {},
             "positions": [],
             "positions_count": 0,
@@ -352,6 +517,7 @@ class PolymarketAccountSync:
             "auth_layers": {
                 "l1_private_key": bool(self.config.private_key),
                 "l2_api_creds": bool(self.config.api_key and self.config.api_secret and self.config.api_passphrase),
+                "signer_address": None,
             },
             "warnings": [],
             "errors": [],
@@ -360,16 +526,7 @@ class PolymarketAccountSync:
 
         account_address = self.config.proxy_address or self.config.wallet_address
         wallet_address = self.config.wallet_address or self.config.proxy_address
-        balance_sources: list[str] = []
-        for candidate in (
-            self.config.deposit_address,
-            self.config.solana_address,
-            self.config.wallet_address,
-            self.config.proxy_address,
-            self.config.funder_address,
-        ):
-            if candidate and candidate not in balance_sources:
-                balance_sources.append(candidate)
+        balance_sources: list[str] = self._candidate_balance_sources()
         if not result["enabled"]:
             result["warnings"].append("Set BOT_POLYMARKET_PROXY_ADDRESS, BOT_POLYMARKET_WALLET_ADDRESS, or BOT_POLYMARKET_FUNDER_ADDRESS to enable live account sync.")
             return result
@@ -448,21 +605,9 @@ class PolymarketAccountSync:
             except Exception as exc:
                 result["warnings"].append(f"activity lookup failed: {exc}")
 
-        source_rows = []
-        total_wallet_balance = 0.0
-        balance_errors: list[str] = []
-        for source_address in balance_sources:
-            try:
-                source_balance = _get_onchain_usdc_balance(source_address)
-                source_rows.append({
-                    "address": source_address,
-                    "kind": "solana" if _is_solana_address(source_address) else "evm",
-                    "balance": round(source_balance, 4),
-                })
-                total_wallet_balance += source_balance
-                read_only_ok = True
-            except Exception as exc:
-                balance_errors.append(f"{source_address}: {exc}")
+        total_wallet_balance, source_rows, balance_errors = self._collect_wallet_balance()
+        if source_rows:
+            read_only_ok = True
         result["balance_sources"] = source_rows
         if balance_errors:
             result["warnings"].append("balance lookup partial: " + "; ".join(balance_errors[:3]))
@@ -488,21 +633,45 @@ class PolymarketAccountSync:
 
         if client is not None:
             try:
-                from py_clob_client.clob_types import AssetType, BalanceAllowanceParams, OpenOrderParams
+                from .clob_sdk import AssetType, BalanceAllowanceParams, OpenOrderParams, normalize_balance_allowance
 
-                collateral = client.get_balance_allowance(
-                    params=BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
-                )
+                signer_address = None
+                try:
+                    signer_obj = getattr(client, "signer", None)
+                    signer_fn = getattr(signer_obj, "address", None)
+                    signer_address = signer_fn() if callable(signer_fn) else signer_fn
+                except Exception:
+                    signer_address = None
+                if signer_address:
+                    result["clob_signer_address"] = signer_address
+                    result["auth_layers"]["signer_address"] = signer_address
+
+                wallet_balance = float(result.get("wallet_balance") or 0.0)
+                collateral_flow = self._refresh_collateral_flow(client, wallet_balance, refresh_if_needed=True)
+                collateral_balance = float(collateral_flow.get("balance") or 0.0)
+                collateral_allowance = float(collateral_flow.get("allowance") or 0.0)
+
                 result["balance"] = {
-                    "balance": float(collateral.get("balance") or 0.0),
-                    "allowance": float(collateral.get("allowance") or 0.0),
-                    "wallet_balance": float(result.get("wallet_balance") or 0.0),
+                    "balance": collateral_balance,
+                    "allowance": collateral_allowance,
+                    "wallet_balance": wallet_balance,
                     "portfolio_value": float(result.get("portfolio_value") or 0.0),
                     "equity": float(result.get("equity") or 0.0),
-                    "raw": collateral,
+                    "collateral_balance": collateral_balance,
+                    "collateral_allowance": collateral_allowance,
+                    "allowances": collateral_flow.get("allowances") or {},
+                    "source": "clob-collateral" if collateral_balance > 0 or collateral_allowance > 0 else "wallet-fallback",
+                    "refreshed": bool(collateral_flow.get("refreshed")),
+                    "raw": collateral_flow.get("raw"),
+                    "flow": collateral_flow,
                 }
+                result["collateral_flow"] = collateral_flow
+                if collateral_flow.get("status") == "needs_wrap":
+                    result["warnings"].append("CLOB collateral is still zero; wrap/transfer USDC into pUSD collateral and approve allowance before live orders.")
+                elif collateral_flow.get("status") == "needs_funding":
+                    result["warnings"].append("No wallet balance detected yet; deposit funds before trying to prepare CLOB collateral.")
                 try:
-                    orders = client.get_orders(OpenOrderParams())
+                    orders = fetch_open_orders(client, OpenOrderParams())
                     if isinstance(orders, list):
                         normalized_orders = [self._normalize_order(order) if isinstance(order, dict) else {"raw": order} for order in orders]
                         result["open_orders"] = normalized_orders

@@ -84,16 +84,32 @@ The backend on the VPS stays responsible for the bot loop and `/api/state`.
 - `BOT_POLYMARKET_SESSION_HINT_PATH` — optional file path whose contents are used as `BOT_POLYMARKET_SESSION_HINT`
 - `BOT_POLYMARKET_FUNDER_ADDRESS` — fallback wallet address if `BOT_POLYMARKET_WALLET_ADDRESS` is not set
 - `BOT_POLYMARKET_DEPOSIT_ADDRESS` — optional Solana deposit address used for wallet balance lookup when deposits are on Solana
-- `BOT_POLYMARKET_PRIVATE_KEY` — wallet private key for authenticated balance / open orders sync
-- `BOT_POLYMARKET_API_KEY` — optional CLOB API key
-- `BOT_POLYMARKET_API_SECRET` — optional CLOB API secret
-- `BOT_POLYMARKET_API_PASSPHRASE` — optional CLOB API passphrase
+- `BOT_POLYMARKET_PRIVATE_KEY` — signer private key used for L1 EIP-712 signing and for deriving CLOB API credentials
+- `BOT_POLYMARKET_API_KEY` — cached CLOB API key derived from `BOT_POLYMARKET_PRIVATE_KEY` (optional if you let the bot derive it)
+- `BOT_POLYMARKET_API_SECRET` — cached CLOB API secret derived from `BOT_POLYMARKET_PRIVATE_KEY` (optional if you let the bot derive it)
+- `BOT_POLYMARKET_API_PASSPHRASE` — cached CLOB API passphrase derived from `BOT_POLYMARKET_PRIVATE_KEY` (optional if you let the bot derive it)
 - `BOT_POLYMARKET_CLOB_HOST` — CLOB host override (default: `https://clob.polymarket.com`)
 - `BOT_POLYMARKET_RPC_URL` — Polygon RPC used to read EVM wallet USDC balance (default: `https://polygon-bor.publicnode.com`)
 - `BOT_POLYMARKET_SOLANA_RPC_URL` — Solana RPC used when the account address is a Solana deposit address (default: `https://api.mainnet-beta.solana.com`)
 - `BOT_POLYMARKET_SOLANA_USDC_MINT` — USDC mint used for Solana balance lookup (default: `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`)
 - `BOT_POLYMARKET_CHAIN_ID` — chain id used by the CLOB client (default: `137`)
-- `BOT_POLYMARKET_SIGNATURE_TYPE` — signature type for the CLOB client (default: `0`)
+- `BOT_POLYMARKET_SIGNATURE_TYPE` — CLOB wallet type (`0` = EOA, `1` = Magic Link/proxy wallet, `2` = browser/embedded proxy wallet)
+
+## Bootstrap auth helper
+
+If `BOT_POLYMARKET_API_KEY` / `BOT_POLYMARKET_API_SECRET` / `BOT_POLYMARKET_API_PASSPHRASE` are missing, derive them from `BOT_POLYMARKET_PRIVATE_KEY` and write them back to the system env file:
+
+```bash
+python scripts/bootstrap_polymarket_auth.py --env-file /etc/default/polymarket-weather-bot
+```
+
+To derive and restart the service in one shot:
+
+```bash
+python scripts/bootstrap_polymarket_auth.py --env-file /etc/default/polymarket-weather-bot --restart
+```
+
+Use `--force` if you want to re-derive and overwrite the cached API creds.
 
 ## API endpoints
 
@@ -101,12 +117,13 @@ The backend on the VPS stays responsible for the bot loop and `/api/state`.
 - `GET /api/state` — current dashboard state
 - `GET /api/snapshots?limit=120` — snapshot history for the PnL chart
 - `GET /api/journal?limit=60` — combined signal / trade / error journal
-- `POST /api/control` — pause, resume, or force a rescan
+- `POST /api/control` — pause, resume, force a rescan, or trigger collateral preparation (prep USDC → pUSD collateral flow)
 
 ## Notes
 
 - Live Polymarket execution is intentionally left as a guarded stub.
-- Live account sync can show portfolio, balance, and open positions when the Polymarket wallet/credentials env vars are set.
+- Live account sync can show portfolio, balance, collateral, allowance, and open positions when the Polymarket wallet/credentials env vars are set.
+- Wallet balance is reported separately from CLOB collateral; the dashboard now surfaces both so you can see when funds still need to be wrapped/transferred into pUSD collateral.
 - If Polymarket login is done via Gmail/Google, export the logged-in session's proxy address as `BOT_POLYMARKET_SESSION_HINT` or `BOT_POLYMARKET_PROXY_ADDRESS`; the bot does not need the Gmail password.
 - The system is designed to keep noise low and only surface tradable situations.
 - If the weather market question cannot be parsed confidently, the market is skipped.

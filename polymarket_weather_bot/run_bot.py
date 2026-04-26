@@ -25,6 +25,24 @@ def _truthy(value: Any) -> bool:
     return str(value).strip().lower() in ('1', 'true', 'yes', 'on', 'y')
 
 
+def _clear_stale_signer_block(store: Store, live_account: Dict[str, Any]) -> bool:
+    controls = store.get_controls()
+    stage = str(controls.get('live_execution_block_stage') or '').strip().lower()
+    reason = str(controls.get('live_execution_block_reason') or '')
+    if stage != 'signer_mismatch':
+        return False
+    if not _truthy(live_account.get('trading_ready')) and str(live_account.get('status') or '').lower() not in {'connected', 'ready'}:
+        return False
+    if 'signer address' not in reason.lower() and 'signer_mismatch' not in reason.lower():
+        return False
+    store.set_control('live_execution_blocked', False)
+    store.set_control('live_execution_block_reason', '')
+    store.set_control('live_execution_block_stage', '')
+    if _truthy(controls.get('paused', False)):
+        store.set_control('paused', False)
+    return True
+
+
 def run_once(store: Store, engine: BotEngine, min_volume: float) -> Dict[str, Any]:
     markets = discover_weather_markets(min_volume=min_volume, store=store)
     return engine.scan_and_trade(markets)
@@ -62,6 +80,9 @@ def run_forever():
     def worker():
         while True:
             try:
+                if account_sync is None or not account_sync.enabled():
+                    time.sleep(account_sync_seconds)
+                    continue
                 controls = store.get_controls()
                 paused = _truthy(controls.get('paused', False))
                 force_scan = _truthy(controls.get('force_scan', False))
@@ -99,7 +120,17 @@ def run_forever():
                 if account_sync is None or not account_sync.enabled():
                     time.sleep(account_sync_seconds)
                     continue
+                controls = store.get_controls()
+                prepare_collateral = _truthy(controls.get('prepare_collateral'))
+                collateral_prep = None
+                if prepare_collateral:
+                    collateral_prep = account_sync.prepare_collateral()
+                    store.set_control('prepare_collateral', False)
                 live_account = account_sync.sync()
+                _clear_stale_signer_block(store, live_account)
+                if collateral_prep is not None:
+                    live_account['collateral_flow'] = collateral_prep
+                    live_account['balance'] = dict(live_account.get('balance') or {}, flow=collateral_prep)
                 snapshot = store.get_last_snapshot() or {}
                 prev_live_account = snapshot.get('live_account') if isinstance(snapshot, dict) else {}
                 prev_orders = prev_live_account.get('order_history') or prev_live_account.get('open_orders') or []
